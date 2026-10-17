@@ -1,0 +1,45 @@
+name: Daily PS Store Scraper
+
+on:
+  schedule:
+    # Se ejecuta todos los días a las 15:00 UTC (10:00 AM hora de Colombia)
+    - cron: '0 15 * * *'
+  workflow_dispatch: # Te permite ejecutarlo con un botón manualmente
+
+# Evita dos ejecuciones simultáneas (ej. cron + botón manual), que podrían enviar pushes duplicados.
+concurrency:
+  group: scraper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Inyectar Credenciales de Firebase
+        # El secreto entra como variable de entorno: así el shell no interpreta las comillas del JSON.
+        env:
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+        run: printf '%s' "$FIREBASE_CREDENTIALS" > serviceAccountKey.json
+
+      - name: Ejecutar Scraper
+        run: npm run dev

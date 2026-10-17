@@ -1,0 +1,284 @@
+package com.example.psdeals.ui.deals
+
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.util.Log
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
+import com.example.psdeals.model.Deal
+import com.example.psdeals.ui.theme.PSDealsTheme
+
+/** Rojo sobrio, llamativo sin ser chillón. Blanco encima = 4.97:1 (cumple WCAG AA para texto normal). */
+private val DiscountBadgeColor = Color(0xFFD62839)
+private const val SUPER_DEAL_THRESHOLD = 70
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.Factory)) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
+    Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Ofertas PS Store", fontWeight = FontWeight.Bold)
+                        (uiState as? DealsUiState.Success)?.let {
+                            Text(
+                                "${it.deals.size} juegos en oferta",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { innerPadding ->
+        when (val state = uiState) {
+            DealsUiState.Loading -> CenteredBox(innerPadding) { CircularProgressIndicator() }
+            is DealsUiState.Error -> CenteredBox(innerPadding) {
+                ErrorContent(message = state.message, onRetry = viewModel::retry)
+            }
+            is DealsUiState.Success ->
+                if (state.deals.isEmpty()) {
+                    CenteredBox(innerPadding) {
+                        Text("No hay ofertas por ahora.\nVuelve mañana 🎮", textAlign = TextAlign.Center)
+                    }
+                } else {
+                    DealsGrid(deals = state.deals, innerPadding = innerPadding)
+                }
+        }
+    }
+}
+
+@Composable
+private fun DealsGrid(deals: List<Deal>, innerPadding: PaddingValues) {
+    val context = LocalContext.current
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            start = 12.dp,
+            end = 12.dp,
+            top = innerPadding.calculateTopPadding() + 8.dp,
+            bottom = innerPadding.calculateBottomPadding() + 16.dp,
+        ),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(deals, key = { it.id }) { deal ->
+            DealCard(deal = deal, onClick = { openProduct(context, deal.productUrl) })
+        }
+    }
+}
+
+@Composable
+fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Box {
+            AsyncImage(
+                model = deal.imageUrl?.let(::resized),
+                contentDescription = deal.title,
+                contentScale = ContentScale.Crop,
+                placeholder = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
+                error = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+            )
+            DiscountBadge(
+                percent = deal.discountPercent,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp),
+            )
+        }
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = deal.title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                minLines = 2, // misma altura en todas las tarjetas de una fila
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = deal.originalPriceText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textDecoration = TextDecoration.LineThrough,
+            )
+            Text(
+                text = deal.discountedPriceText,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiscountBadge(percent: Int, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = modifier
+            .background(DiscountBadgeColor, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        if (percent >= SUPER_DEAL_THRESHOLD) PulsingFire()
+        Text(
+            text = "-$percent%",
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.ExtraBold,
+        )
+    }
+}
+
+/** Fuego con efecto de "latido" para las super ofertas. */
+@Composable
+private fun PulsingFire() {
+    val transition = rememberInfiniteTransition(label = "fire")
+    val scale by transition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "fireScale",
+    )
+    Text(
+        text = "🔥",
+        style = MaterialTheme.typography.labelLarge,
+        // graphicsLayer lee `scale` solo en la fase de dibujo: anima sin recomponer la tarjeta en cada frame.
+        modifier = Modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        },
+    )
+}
+
+@Composable
+private fun ErrorContent(message: String, onRetry: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(24.dp),
+    ) {
+        Text("No se pudieron cargar las ofertas", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onRetry) { Text("Reintentar") }
+    }
+}
+
+@Composable
+private fun CenteredBox(innerPadding: PaddingValues, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(innerPadding),
+        contentAlignment = Alignment.Center,
+    ) { content() }
+}
+
+/** El CDN de la PS Store redimensiona con `?w=`: ~15 KB en vez de ~800 KB por portada. */
+private fun resized(url: String): String =
+    if (url.contains("image.api.playstation.com") && !url.contains('?')) "$url?w=440" else url
+
+private fun openProduct(context: Context, url: String) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+    } catch (e: ActivityNotFoundException) {
+        Log.w("DealsScreen", "No hay app para abrir $url", e)
+    }
+}
+
+@Preview(showBackground = true, widthDp = 200)
+@Composable
+private fun DealCardPreview() {
+    PSDealsTheme {
+        DealCard(
+            deal = Deal(
+                id = "preview",
+                title = "Marvel's Spider-Man: Game of the Year Edition",
+                originalPriceText = "US$39.99",
+                discountedPriceText = "US$9.99",
+                discountPercent = 75,
+                imageUrl = null,
+                productUrl = "https://store.playstation.com",
+                lastSeenAt = null,
+            ),
+            onClick = {},
+        )
+    }
+}
