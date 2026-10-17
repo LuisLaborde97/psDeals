@@ -1,0 +1,27 @@
+{
+  "name": "ps-store-deals-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scraper diario de ofertas de la PlayStation Store -> Firestore + FCM (topic daily_deals)",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22.9"
+  },
+  "scripts": {
+    "dev": "tsx --env-file-if-exists=.env src/index.ts",
+    "dry-run": "tsx --env-file-if-exists=.env src/index.ts --dry-run",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "puppeteer": "^25.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
