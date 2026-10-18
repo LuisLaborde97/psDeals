@@ -12,4 +12,6 @@ data class Deal(
     val productUrl: String,
     /** Última vez que el scraper vio la oferta, en epoch millis. */
     val lastSeenAt: Long?,
+    /** Géneros localizados por la tienda (ej. "Acción"); vacío en documentos antiguos. */
+    val genres: List<String> = emptyList(),
 )

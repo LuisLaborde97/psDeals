@@ -54,6 +54,8 @@ class DealsRepository(
             imageUrl = getString("imageUrl"),
             productUrl = productUrl,
             lastSeenAt = getTimestamp("lastSeenAt")?.toDate()?.time,
+            // Firestore devuelve List<*>: se descarta cualquier elemento que no sea String.
+            genres = (get("genres") as? List<*>)?.filterIsInstance<String>().orEmpty(),
         )
     }
 

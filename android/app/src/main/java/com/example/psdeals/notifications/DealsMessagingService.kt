@@ -21,8 +21,16 @@ class DealsMessagingService : FirebaseMessagingService() {
         }
     }
 
-    override fun onNewToken(token: String) {
+    /** Ruta nueva de firebase-messaging 26+ (acción FCM_REGISTERED). */
+    override fun onRegistered(token: String) {
         // No se registra el token en el log: identifica al dispositivo.
+        Log.d(TAG, "Registro FCM actualizado; re-suscribiendo al topic")
+        DealsNotifications.subscribeToTopic()
+    }
+
+    /** Ruta antigua (acción NEW_TOKEN), obsoleta pero aún despachada por el SDK; la suscripción es idempotente. */
+    @Deprecated("Reemplazado por onRegistered en firebase-messaging 26")
+    override fun onNewToken(token: String) {
         Log.d(TAG, "Token FCM renovado; re-suscribiendo al topic")
         DealsNotifications.subscribeToTopic()
     }
