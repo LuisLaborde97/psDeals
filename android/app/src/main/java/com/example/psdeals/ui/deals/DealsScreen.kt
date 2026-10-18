@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -42,6 +43,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -173,7 +175,15 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
             null
         },
         singleLine = true,
-        shape = RoundedCornerShape(28.dp),
+        shape = CircleShape,
+        // Píldora sin borde sobre surfaceVariant; al no haber borde, la lupa cambia a primary para indicar el foco.
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+            focusedBorderColor = Color.Transparent,
+            unfocusedBorderColor = Color.Transparent,
+            focusedLeadingIconColor = MaterialTheme.colorScheme.primary,
+        ),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
     )
@@ -261,6 +271,15 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 2,
                 minLines = 2, // misma altura en todas las tarjetas de una fila
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                // Sin géneros se deja una línea en blanco para no descuadrar la altura de la fila.
+                text = deal.genres.joinToString(", ").ifEmpty { " " },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(8.dp))
@@ -396,6 +415,7 @@ private fun DealCardPreview() {
                 imageUrl = null,
                 productUrl = "https://store.playstation.com",
                 lastSeenAt = null,
+                genres = listOf("Acción", "Aventura"),
             ),
             onClick = {},
         )
