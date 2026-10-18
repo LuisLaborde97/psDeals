@@ -11,4 +11,6 @@ export interface Deal {
   imageUrl: string | null;
   productUrl: string;
   region: string;
+  /** Géneros localizados por la tienda (ej. "Acción", "Terror"). Vacío si no se pudieron obtener. */
+  genres: string[];
 }

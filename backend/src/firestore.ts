@@ -50,6 +50,8 @@ export async function saveDeals(deals: Deal[]): Promise<Deal[]> {
           originalPriceText: deal.originalPriceText,
           discountedPriceText: deal.discountedPriceText,
           discountPercent: deal.discountPercent,
+          // Si la fase de géneros falló en esta ejecución, no se borran los que ya estaban guardados.
+          ...(deal.genres.length > 0 && { genres: deal.genres }),
           updatedAt: now,
           lastSeenAt: now,
         });

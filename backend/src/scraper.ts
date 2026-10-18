@@ -10,6 +10,12 @@ const MAX_RETRIES = 3;
 const MAX_PAGES = Number(process.env.MAX_PAGES ?? 250);
 /** Orden de preferencia para la portada; MASTER es la carátula cuadrada. */
 const IMAGE_ROLES = ['MASTER', 'GAMEHUB_COVER_ART', 'PORTRAIT_BANNER', 'EDITION_KEY_ART'];
+/**
+ * Los productos de la grilla no traen géneros: la API solo los expone como faceta de filtro.
+ * Por eso se recorre la categoría una vez por género (`?ACTION=productGenres`) y se etiqueta
+ * cada oferta que aparece en ese listado.
+ */
+const GENRE_FACET = 'productGenres';
 
 interface StoreProduct {
   id: string;
@@ -22,10 +28,21 @@ interface StoreProduct {
   media?: { role: string; type: string; url: string }[] | null;
 }
 
+interface FacetValue {
+  key: string;
+  displayName: string;
+}
+
+interface CategoryFilter {
+  facet: string;
+  key: string;
+}
+
 interface CategoryPage {
   products: StoreProduct[];
   isLast: boolean;
   totalCount: number;
+  genres: FacetValue[];
 }
 
 export async function scrapeDeals(region: string): Promise<Deal[]> {
@@ -60,17 +77,27 @@ export async function scrapeDeals(region: string): Promise<Deal[]> {
     }
 
     // 2. Recorre cada categoría de ofertas página por página.
+    const genresByCategory = new Map<string, FacetValue[]>();
     for (const categoryId of categoryIds) {
-      for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
-        const result = await withRetries(`categoría ${categoryId} p.${pageNum}`, () =>
-          fetchCategoryPage(page, region, categoryId, pageNum),
-        );
-        if (!result) break; // agotó reintentos: seguimos con lo que ya tenemos
-        addAll(result.products);
-        console.log(
-          `[scraper] ${categoryId} p.${pageNum}: ${result.products.length} productos (total ${result.totalCount})`,
-        );
-        if (result.isLast || result.products.length === 0) break;
+      genresByCategory.set(categoryId, await crawlCategory(page, region, categoryId, null, addAll));
+    }
+
+    // 3. Géneros: un recorrido filtrado por cada género, etiquetando las ofertas que aparecen.
+    if (deals.size > 0) {
+      for (const [categoryId, genres] of genresByCategory) {
+        for (const genre of genres) {
+          let tagged = 0;
+          await crawlCategory(page, region, categoryId, { facet: GENRE_FACET, key: genre.key }, (products) => {
+            for (const p of products) {
+              const deal = deals.get(p.id);
+              if (deal && !deal.genres.includes(genre.displayName)) {
+                deal.genres.push(genre.displayName);
+                tagged++;
+              }
+            }
+          });
+          console.log(`[scraper] género "${genre.displayName}": ${tagged} ofertas`);
+        }
       }
     }
   } finally {
@@ -113,21 +140,56 @@ async function scrapeDealsLanding(
   return strands;
 }
 
+/** Recorre todas las páginas de una categoría (opcionalmente filtrada) y devuelve la faceta de géneros. */
+async function crawlCategory(
+  page: Page,
+  region: string,
+  categoryId: string,
+  filter: CategoryFilter | null,
+  onProducts: (products: StoreProduct[]) => void,
+): Promise<FacetValue[]> {
+  const label = filter ? `${categoryId} [${filter.key}]` : categoryId;
+  let genres: FacetValue[] = [];
+  for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+    const result = await withRetries(`categoría ${label} p.${pageNum}`, () =>
+      fetchCategoryPage(page, region, categoryId, pageNum, filter),
+    );
+    if (!result) break; // agotó reintentos: seguimos con lo que ya tenemos
+    if (pageNum === 1) genres = result.genres;
+    onProducts(result.products);
+    if (!filter) {
+      console.log(`[scraper] ${label} p.${pageNum}: ${result.products.length} productos (total ${result.totalCount})`);
+    }
+    if (result.isLast || result.products.length === 0) break;
+  }
+  return genres;
+}
+
 async function fetchCategoryPage(
   page: Page,
   region: string,
   categoryId: string,
   pageNum: number,
+  filter: CategoryFilter | null,
 ): Promise<CategoryPage> {
-  // Se registra antes de navegar para no perder la respuesta GraphQL de la grilla.
+  const expectedFilter = filter ? [`${filter.facet}:${filter.key}`] : [];
+  // Se registra antes de navegar para no perder la respuesta GraphQL de la grilla. Con filtro, la
+  // página dispara primero la consulta SIN filtro: hay que comparar también `filterBy`.
   const gridResponse = page.waitForResponse(
-    (res) => isGraphqlOp(res, 'categoryGridRetrieve') && graphqlVariables(res)?.id === categoryId,
+    (res) => {
+      if (!isGraphqlOp(res, 'categoryGridRetrieve')) return false;
+      const vars = graphqlVariables(res);
+      return vars?.id === categoryId && JSON.stringify(vars.filterBy ?? []) === JSON.stringify(expectedFilter);
+    },
     { timeout: NAV_TIMEOUT_MS },
   );
   // Evita un unhandled rejection si goto falla primero.
   gridResponse.catch(() => {});
 
-  await page.goto(`${STORE_URL}/${region}/category/${categoryId}/${pageNum}`, {
+  // La tienda codifica los filtros como `?VALOR=faceta` (ej. ?ACTION=productGenres). La "/" debe ir
+  // literal: con `?MUSIC%2FRHYTHM=...` la tienda ignora el filtro y la respuesta filtrada nunca llega.
+  const query = filter ? `?${encodeURIComponent(filter.key).replace(/%2F/gi, '/')}=${filter.facet}` : '';
+  await page.goto(`${STORE_URL}/${region}/category/${categoryId}/${pageNum}${query}`, {
     waitUntil: 'domcontentloaded',
     timeout: NAV_TIMEOUT_MS,
   });
@@ -137,10 +199,14 @@ async function fetchCategoryPage(
   const grid = (await res.json())?.data?.categoryGridRetrieve;
   if (!grid) throw new Error('respuesta sin categoryGridRetrieve');
 
+  const genreFacet = (grid.facetOptions ?? []).find((f: { name: string }) => f.name === GENRE_FACET);
   return {
     products: grid.products ?? [],
     isLast: grid.pageInfo?.isLast ?? true,
     totalCount: grid.pageInfo?.totalCount ?? 0,
+    genres: (genreFacet?.values ?? [])
+      .filter((v: FacetValue) => v.key && v.displayName)
+      .map((v: FacetValue) => ({ key: v.key, displayName: v.displayName })),
   };
 }
 
@@ -164,6 +230,7 @@ function toDeal(p: StoreProduct, region: string): Deal | null {
     imageUrl: pickImage(p.media),
     productUrl: `${STORE_URL}/${region}/product/${p.id}`,
     region,
+    genres: [], // se completan en la fase de géneros de scrapeDeals
   };
 }
 

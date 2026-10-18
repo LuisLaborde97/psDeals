@@ -24,9 +24,11 @@ async function main(): Promise<number> {
         antes: d.originalPriceText,
         ahora: d.discountedPriceText,
         '%': d.discountPercent,
-        portada: d.imageUrl ? 'sí' : 'no',
+        géneros: d.genres.join(', ').slice(0, 40),
       })),
     );
+    const withGenres = deals.filter((d) => d.genres.length > 0).length;
+    console.log(`[dry-run] ${withGenres}/${deals.length} ofertas con al menos un género.`);
     const candidates = deals.filter((d) => d.discountPercent >= PUSH_MIN_DISCOUNT).length;
     console.log(
       `[dry-run] Se escribirían ${deals.length} documentos en "deals". ` +
