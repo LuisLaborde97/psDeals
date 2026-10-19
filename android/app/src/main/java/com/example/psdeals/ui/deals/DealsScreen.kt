@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -54,11 +55,14 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
@@ -85,6 +89,18 @@ import com.example.psdeals.ui.theme.PSDealsTheme
 private val DiscountBadgeColor = Color(0xFFD62839)
 private const val SUPER_DEAL_THRESHOLD = 70
 
+// Degradado de fondo inspirado en el logo: azul del control arriba, brasa del fuego abajo.
+private val DarkGradient = listOf(Color(0xFF081020), Color(0xFF0E1426), Color(0xFF1E0606))
+// Versión clara (azul hielo → melocotón) para que el texto oscuro del tema claro siga siendo legible.
+private val LightGradient = listOf(Color(0xFFE8F0FF), Color(0xFFF4F1F8), Color(0xFFFFECE6))
+
+/** Elige el degradado según el tema activo (incluye colores dinámicos), no solo según el sistema. */
+@Composable
+private fun rememberBackgroundBrush(): Brush {
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return remember(isDark) { Brush.verticalGradient(if (isDark) DarkGradient else LightGradient) }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.Factory)) {
@@ -94,12 +110,20 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
+    // El degradado ocupa toda la pantalla (también detrás de la barra de estado, por edge-to-edge);
+    // Scaffold y TopAppBar son transparentes para dejarlo ver.
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
+            .background(rememberBackgroundBrush())
             .nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Transparent,
+                    scrolledContainerColor = Color.Transparent,
+                ),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
@@ -260,6 +284,10 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
+        // Translúcida para que el degradado se asome detrás; sin elevación, así la sombra no se ve a través.
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f),
+        ),
     ) {
         Box {
             AsyncImage(
