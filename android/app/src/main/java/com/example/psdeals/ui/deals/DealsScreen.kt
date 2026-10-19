@@ -118,6 +118,9 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
             .background(rememberBackgroundBrush())
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
+        // Obligatorio con fondo transparente: contentColorFor(Transparent) no encuentra pareja en el tema y
+        // cae al LocalContentColor por defecto (negro), dejando el texto heredado ilegible en modo oscuro.
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -284,9 +287,11 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        // Translúcida para que el degradado se asome detrás; sin elevación, así la sombra no se ve a través.
+        // Cristal: translúcida para que el degradado se asome; sin elevación, así la sombra no se ve a través.
+        // contentColor explícito por la misma razón que en el Scaffold: un color con alpha no tiene pareja en el tema.
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.8f),
+            containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
     ) {
         Box {
@@ -311,6 +316,7 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
             Text(
                 text = deal.title,
                 style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 minLines = 2, // misma altura en todas las tarjetas de una fila
                 overflow = TextOverflow.Ellipsis,
@@ -328,7 +334,9 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
             Text(
                 text = deal.originalPriceText,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // onSurface (no White) para que también funcione en modo claro; alpha 0.7 lo hace secundario
+                // y mantiene AA (con 0.6 bajaba a 4.3:1 en modo claro).
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textDecoration = TextDecoration.LineThrough,
             )
             Text(
