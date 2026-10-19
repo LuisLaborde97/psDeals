@@ -89,8 +89,8 @@ import com.example.psdeals.ui.theme.PSDealsTheme
 private val DiscountBadgeColor = Color(0xFFD62839)
 private const val SUPER_DEAL_THRESHOLD = 70
 
-// Degradado de fondo inspirado en el logo: azul del control arriba, brasa del fuego abajo.
-private val DarkGradient = listOf(Color(0xFF081020), Color(0xFF0E1426), Color(0xFF1E0606))
+// Modo oscuro: grafito con un leve tinte azul arriba → negro casi puro abajo. Neutro para no competir con las portadas.
+private val DarkGradient = listOf(Color(0xFF1C1C24), Color(0xFF121216), Color(0xFF09090B))
 // Versión clara (azul hielo → melocotón) para que el texto oscuro del tema claro siga siendo legible.
 private val LightGradient = listOf(Color(0xFFE8F0FF), Color(0xFFF4F1F8), Color(0xFFFFECE6))
 
