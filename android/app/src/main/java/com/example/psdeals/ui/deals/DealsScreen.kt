@@ -10,6 +10,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -293,6 +294,9 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
             containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f),
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
+        // Borde de cristal: sobre el fondo grafito la tarjeta translúcida apenas contrasta (~1.01:1).
+        // Alpha 0.5 deja el trazo en ~1.3:1: visible pero sutil (con 0.2 quedaba en 1.1:1, casi invisible).
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
     ) {
         Box {
             AsyncImage(
