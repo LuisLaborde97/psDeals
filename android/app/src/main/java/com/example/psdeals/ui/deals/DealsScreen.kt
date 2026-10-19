@@ -112,7 +112,7 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                         )
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("Ofertas PS Store", fontWeight = FontWeight.Bold)
+                            Text("PSDeals", fontWeight = FontWeight.Bold)
                             (uiState as? DealsUiState.Success)?.let {
                                 Text(
                                     if (it.isFiltered) "${it.deals.size} de ${it.totalCount} ofertas"
