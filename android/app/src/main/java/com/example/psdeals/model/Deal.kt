@@ -14,4 +14,8 @@ data class Deal(
     val lastSeenAt: Long?,
     /** Géneros localizados por la tienda (ej. "Acción"); vacío en documentos antiguos. */
     val genres: List<String> = emptyList(),
+    /** Id de [StorePlatform]; los documentos anteriores a la migración solo eran de PlayStation. */
+    val platform: String = StorePlatform.PLAYSTATION.id,
+    /** Enlace de compra común a todas las tiendas; si falta se usa [productUrl]. */
+    val storeUrl: String? = null,
 )

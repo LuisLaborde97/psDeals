@@ -84,6 +84,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.example.psdeals.R
 import com.example.psdeals.model.Deal
+import com.example.psdeals.model.StorePlatform
 import com.example.psdeals.ui.theme.PSDealsTheme
 
 /** Rojo sobrio, llamativo sin ser chillón. Blanco encima = 4.97:1 (cumple WCAG AA para texto normal). */
@@ -108,6 +109,7 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val genres by viewModel.availableGenres.collectAsStateWithLifecycle()
     val selectedGenre by viewModel.selectedGenre.collectAsStateWithLifecycle()
+    val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
 
@@ -163,6 +165,7 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                 .padding(top = innerPadding.calculateTopPadding()),
         ) {
             SearchField(query = viewModel.searchQuery, onQueryChange = viewModel::onSearchQueryChange)
+            PlatformChips(selectedPlatform = selectedPlatform, onPlatformClick = viewModel::onPlatformClick)
             if (genres.isNotEmpty()) {
                 GenreChips(genres = genres, selectedGenre = selectedGenre, onGenreClick = viewModel::onGenreClick)
             }
@@ -187,7 +190,10 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                             NoMatchesContent(onClearFilters = viewModel::clearFilters)
                         }
                         else -> ScrollableCentered {
-                            Text("No hay ofertas por ahora.\nVuelve mañana 🎮", textAlign = TextAlign.Center)
+                            Text(
+                                "No hay ofertas de ${selectedPlatform.label} por ahora.\nVuelve mañana 🎮",
+                                textAlign = TextAlign.Center,
+                            )
                         }
                     }
                 }
@@ -232,6 +238,23 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
 }
 
 @Composable
+private fun PlatformChips(selectedPlatform: StorePlatform, onPlatformClick: (StorePlatform) -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(StorePlatform.entries, key = { it.id }) { platform ->
+            SelectableChip(
+                label = platform.label,
+                selected = platform == selectedPlatform,
+                onClick = { onPlatformClick(platform) },
+            )
+        }
+    }
+}
+
+@Composable
 private fun GenreChips(genres: List<String>, selectedGenre: String?, onGenreClick: (String) -> Unit) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
@@ -239,25 +262,29 @@ private fun GenreChips(genres: List<String>, selectedGenre: String?, onGenreClic
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(genres, key = { it }) { genre ->
-            val selected = genre == selectedGenre
-            FilterChip(
-                selected = selected,
-                onClick = { onGenreClick(genre) },
-                label = { Text(genre) },
-                leadingIcon = if (selected) {
-                    {
-                        Icon(
-                            painterResource(R.drawable.ic_check),
-                            contentDescription = null,
-                            modifier = Modifier.size(FilterChipDefaults.IconSize),
-                        )
-                    }
-                } else {
-                    null
-                },
-            )
+            SelectableChip(label = genre, selected = genre == selectedGenre, onClick = { onGenreClick(genre) })
         }
     }
+}
+
+@Composable
+private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        leadingIcon = if (selected) {
+            {
+                Icon(
+                    painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                )
+            }
+        } else {
+            null
+        },
+    )
 }
 
 @Composable
@@ -276,7 +303,7 @@ private fun DealsGrid(deals: List<Deal>, bottomInset: Dp) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(deals, key = { it.id }) { deal ->
-            DealCard(deal = deal, onClick = { openProduct(context, deal.productUrl) })
+            DealCard(deal = deal, onClick = { openProduct(context, deal.storeUrl ?: deal.productUrl) })
         }
     }
 }
@@ -313,6 +340,12 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
                 percent = deal.discountPercent,
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .padding(8.dp),
+            )
+            PlatformBadge(
+                platform = deal.platform,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
                     .padding(8.dp),
             )
         }
@@ -370,6 +403,20 @@ private fun DiscountBadge(percent: Int, modifier: Modifier = Modifier) {
             fontWeight = FontWeight.ExtraBold,
         )
     }
+}
+
+/** Etiqueta discreta sobre la portada; el velo oscuro mantiene el texto blanco legible sobre cualquier imagen. */
+@Composable
+private fun PlatformBadge(platform: String, modifier: Modifier = Modifier) {
+    Text(
+        text = StorePlatform.fromId(platform)?.label ?: platform,
+        color = Color.White,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
 }
 
 /** Fuego con efecto de "latido" para las super ofertas. */
@@ -470,6 +517,8 @@ private fun DealCardPreview() {
                 productUrl = "https://store.playstation.com",
                 lastSeenAt = null,
                 genres = listOf("Acción", "Aventura"),
+                platform = StorePlatform.PLAYSTATION.id,
+                storeUrl = "https://store.playstation.com",
             ),
             onClick = {},
         )

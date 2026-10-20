@@ -2,6 +2,7 @@ package com.example.psdeals.data
 
 import android.util.Log
 import com.example.psdeals.model.Deal
+import com.example.psdeals.model.StorePlatform
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
@@ -39,9 +40,11 @@ class DealsRepository(
     /** Mapeo manual y tolerante: un documento mal formado se descarta en vez de romper toda la lista. */
     private fun DocumentSnapshot.toDealOrNull(): Deal? {
         val title = getString("title")
-        val productUrl = getString("productUrl")
-        if (title.isNullOrBlank() || productUrl.isNullOrBlank()) {
-            Log.w(TAG, "Documento $id descartado: falta title o productUrl")
+        val storeUrl = getString("storeUrl")?.takeIf { it.isNotBlank() }
+        // Las tiendas nuevas pueden traer solo storeUrl: sirve de respaldo para productUrl.
+        val productUrl = getString("productUrl")?.takeIf { it.isNotBlank() } ?: storeUrl
+        if (title.isNullOrBlank() || productUrl == null) {
+            Log.w(TAG, "Documento $id descartado: falta title o enlace a la tienda")
             return null
         }
         return Deal(
@@ -56,6 +59,8 @@ class DealsRepository(
             lastSeenAt = getTimestamp("lastSeenAt")?.toDate()?.time,
             // Firestore devuelve List<*>: se descarta cualquier elemento que no sea String.
             genres = (get("genres") as? List<*>)?.filterIsInstance<String>().orEmpty(),
+            platform = getString("platform")?.takeIf { it.isNotBlank() } ?: StorePlatform.PLAYSTATION.id,
+            storeUrl = storeUrl,
         )
     }
 
