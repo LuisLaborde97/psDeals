@@ -42,4 +42,7 @@ jobs:
         run: printf '%s' "$FIREBASE_CREDENTIALS" > serviceAccountKey.json
 
       - name: Ejecutar Scraper
+        env:
+          # Rebajas de Epic vía IsThereAnyDeal; sin el secreto, Epic solo trae su colección de juegos gratis.
+          ITAD_API_KEY: ${{ secrets.ITAD_API_KEY }}
         run: npm run dev

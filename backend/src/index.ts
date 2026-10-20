@@ -1,6 +1,7 @@
 import { PUSH_MIN_DISCOUNT, saveDeals } from './firestore.js';
 import { notifyDeals } from './notify.js';
 import { errMsg, scrapeDeals } from './scraper.js';
+import { scrapeEpicDeals } from './epic.js';
 import { scrapeSteamDeals } from './steam.js';
 import type { Deal, Platform } from './types.js';
 
@@ -8,6 +9,7 @@ import type { Deal, Platform } from './types.js';
 const ENGINES: { platform: Platform; scrape: (region: string) => Promise<Deal[]> }[] = [
   { platform: 'playstation', scrape: scrapeDeals },
   { platform: 'steam', scrape: scrapeSteamDeals },
+  { platform: 'epic', scrape: scrapeEpicDeals },
 ];
 
 async function main(): Promise<number> {
