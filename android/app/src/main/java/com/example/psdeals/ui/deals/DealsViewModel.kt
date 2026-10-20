@@ -36,7 +36,7 @@ sealed interface DealsUiState {
 
     /**
      * @param deals lista ya filtrada por tienda, búsqueda y género.
-     * @param totalCount ofertas de la tienda elegida antes de filtrar por búsqueda y género.
+     * @param totalCount ofertas de la tienda elegida (o de todas) antes de filtrar por búsqueda y género.
      * @param isFiltered hay búsqueda o género activos (distingue "sin ofertas" de "sin coincidencias").
      */
     data class Success(val deals: List<Deal>, val totalCount: Int, val isFiltered: Boolean) : DealsUiState
@@ -64,9 +64,9 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     private val _selectedGenre = MutableStateFlow<String?>(null)
     val selectedGenre: StateFlow<String?> = _selectedGenre.asStateFlow()
 
-    /** Siempre hay una tienda elegida: funciona como pestaña, no como filtro opcional. */
-    private val _selectedPlatform = MutableStateFlow(StorePlatform.PLAYSTATION)
-    val selectedPlatform: StateFlow<StorePlatform> = _selectedPlatform.asStateFlow()
+    /** Tienda elegida; null = "Todas". Funciona como pestaña: tocar la activa no la deselecciona. */
+    private val _selectedPlatform = MutableStateFlow<StorePlatform?>(StorePlatform.PLAYSTATION)
+    val selectedPlatform: StateFlow<StorePlatform?> = _selectedPlatform.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -84,9 +84,13 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
         // 5 s de gracia: el listener sobrevive a una rotación pero se cierra si la app pasa a segundo plano.
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DealsSource.Loading)
 
-    /** Ofertas de la tienda elegida; los géneros y el resto de filtros parten de aquí. */
+    /** Ofertas de la tienda elegida (o todas); los géneros y el resto de filtros parten de aquí. */
     private val platformSource: StateFlow<DealsSource> = combine(source, _selectedPlatform) { state, platform ->
-        if (state is DealsSource.Loaded) DealsSource.Loaded(state.deals.filter { it.platform == platform.id }) else state
+        if (state is DealsSource.Loaded && platform != null) {
+            DealsSource.Loaded(state.deals.filter { it.platform == platform.id })
+        } else {
+            state
+        }
     }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DealsSource.Loading)
@@ -141,7 +145,8 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     /** Tocar el chip seleccionado lo deselecciona. */
     fun onGenreClick(genre: String) = _selectedGenre.update { if (it == genre) null else genre }
 
-    fun onPlatformClick(platform: StorePlatform) {
+    /** null = "Todas". */
+    fun onPlatformClick(platform: StorePlatform?) {
         _selectedPlatform.value = platform
     }
 

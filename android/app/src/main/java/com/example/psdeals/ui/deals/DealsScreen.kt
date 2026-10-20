@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -190,10 +191,8 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                             NoMatchesContent(onClearFilters = viewModel::clearFilters)
                         }
                         else -> ScrollableCentered {
-                            Text(
-                                "No hay ofertas de ${selectedPlatform.label} por ahora.\nVuelve mañana 🎮",
-                                textAlign = TextAlign.Center,
-                            )
+                            val store = selectedPlatform?.let { " de ${it.label}" }.orEmpty()
+                            Text("No hay ofertas$store por ahora.\nVuelve mañana 🎮", textAlign = TextAlign.Center)
                         }
                     }
                 }
@@ -237,13 +236,17 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
     )
 }
 
+/** `null` representa "Todas": no es una tienda, así que no vive en [StorePlatform]. */
 @Composable
-private fun PlatformChips(selectedPlatform: StorePlatform, onPlatformClick: (StorePlatform) -> Unit) {
+private fun PlatformChips(selectedPlatform: StorePlatform?, onPlatformClick: (StorePlatform?) -> Unit) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item(key = "all") {
+            SelectableChip(label = "Todas", selected = selectedPlatform == null, onClick = { onPlatformClick(null) })
+        }
         items(StorePlatform.entries, key = { it.id }) { platform ->
             SelectableChip(
                 label = platform.label,
@@ -342,12 +345,6 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
                     .align(Alignment.TopStart)
                     .padding(8.dp),
             )
-            PlatformBadge(
-                platform = deal.platform,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-            )
         }
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
@@ -359,14 +356,26 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(4.dp))
-            Text(
-                // Sin géneros se deja una línea en blanco para no descuadrar la altura de la fila.
-                text = deal.genres.joinToString(", ").ifEmpty { " " },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Sobre el cristal (no sobre la portada) para que el tint sutil tenga contraste estable.
+                StorePlatform.fromId(deal.platform)?.let { platform ->
+                    Icon(
+                        painter = painterResource(platform.iconRes),
+                        contentDescription = platform.label,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    // Sin géneros se deja una línea en blanco para no descuadrar la altura de la fila.
+                    text = deal.genres.joinToString(", ").ifEmpty { " " },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Spacer(Modifier.height(8.dp))
             Text(
                 text = deal.originalPriceText,
@@ -405,19 +414,15 @@ private fun DiscountBadge(percent: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** Etiqueta discreta sobre la portada; el velo oscuro mantiene el texto blanco legible sobre cualquier imagen. */
-@Composable
-private fun PlatformBadge(platform: String, modifier: Modifier = Modifier) {
-    Text(
-        text = StorePlatform.fromId(platform)?.label ?: platform,
-        color = Color.White,
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.SemiBold,
-        modifier = modifier
-            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
-}
+/** Logo de la tienda (res/drawable). Vive en la UI para que el modelo no dependa de recursos de Android. */
+@get:DrawableRes
+private val StorePlatform.iconRes: Int
+    get() = when (this) {
+        StorePlatform.PLAYSTATION -> R.drawable.ic_playstation
+        StorePlatform.STEAM -> R.drawable.ic_steam
+        StorePlatform.EPIC -> R.drawable.ic_epic
+        StorePlatform.XBOX -> R.drawable.ic_xbox
+    }
 
 /** Fuego con efecto de "latido" para las super ofertas. */
 @Composable
