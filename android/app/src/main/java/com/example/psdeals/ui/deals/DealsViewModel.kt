@@ -38,15 +38,23 @@ sealed interface DealsUiState {
      * @param deals lista ya filtrada por tienda, búsqueda y género.
      * @param totalCount ofertas de la tienda elegida (o de todas) antes de filtrar por búsqueda y género.
      * @param isFiltered hay búsqueda o género activos (distingue "sin ofertas" de "sin coincidencias").
+     * @param platform tienda de la que salen [deals] (null = todas). Viaja con los datos y no aparte
+     *   para que la UI sepa exactamente cuándo llegó la lista de la tienda nueva.
      */
-    data class Success(val deals: List<Deal>, val totalCount: Int, val isFiltered: Boolean) : DealsUiState
+    data class Success(
+        val deals: List<Deal>,
+        val totalCount: Int,
+        val isFiltered: Boolean,
+        val platform: StorePlatform?,
+    ) : DealsUiState
     data class Error(val message: String) : DealsUiState
 }
 
 /** Estado crudo de Firestore, antes de aplicar filtros. */
 private sealed interface DealsSource {
     data object Loading : DealsSource
-    data class Loaded(val deals: List<Deal>) : DealsSource
+    /** @param platform tienda por la que ya se filtró [deals] (null = sin filtrar). */
+    data class Loaded(val deals: List<Deal>, val platform: StorePlatform? = null) : DealsSource
     data class Failed(val message: String) : DealsSource
 }
 
@@ -86,10 +94,10 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
 
     /** Ofertas de la tienda elegida (o todas); los géneros y el resto de filtros parten de aquí. */
     private val platformSource: StateFlow<DealsSource> = combine(source, _selectedPlatform) { state, platform ->
-        if (state is DealsSource.Loaded && platform != null) {
-            DealsSource.Loaded(state.deals.filter { it.platform == platform.id })
-        } else {
-            state
+        when {
+            state !is DealsSource.Loaded -> state
+            platform == null -> state.copy(platform = null)
+            else -> DealsSource.Loaded(state.deals.filter { it.platform == platform.id }, platform)
         }
     }
         .flowOn(Dispatchers.Default)
@@ -131,6 +139,7 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
                     deals = filtered,
                     totalCount = source.deals.size,
                     isFiltered = genre != null || needle.isNotEmpty(),
+                    platform = source.platform,
                 )
             }
         }

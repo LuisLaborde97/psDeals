@@ -57,6 +57,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -166,7 +167,14 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                 .padding(top = innerPadding.calculateTopPadding()),
         ) {
             SearchField(query = viewModel.searchQuery, onQueryChange = viewModel::onSearchQueryChange)
-            PlatformChips(selectedPlatform = selectedPlatform, onPlatformClick = viewModel::onPlatformClick)
+            PlatformChips(
+                selectedPlatform = selectedPlatform,
+                onPlatformClick = { platform ->
+                    // Barra expandida al cambiar de tienda: el contador de la tienda nueva queda a la vista.
+                    scrollBehavior.state.heightOffset = 0f
+                    viewModel.onPlatformClick(platform)
+                },
+            )
             if (genres.isNotEmpty()) {
                 GenreChips(genres = genres, selectedGenre = selectedGenre, onGenreClick = viewModel::onGenreClick)
             }
@@ -186,7 +194,12 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                             ErrorContent(message = state.message, onRetry = viewModel::refreshDeals)
                         }
                         state is DealsUiState.Success && state.deals.isNotEmpty() ->
-                            DealsGrid(deals = state.deals, bottomInset = bottomInset)
+                            // Grilla nueva (y su scroll en 0) cuando llega la lista de otra tienda. Reiniciar el
+                            // LazyGridState al tocar el chip no basta: la lista llega después y la grilla
+                            // conservaría a la vista el primer elemento anterior si existe en la lista nueva.
+                            key(state.platform) {
+                                DealsGrid(deals = state.deals, bottomInset = bottomInset)
+                            }
                         state is DealsUiState.Success && state.isFiltered -> ScrollableCentered {
                             NoMatchesContent(onClearFilters = viewModel::clearFilters)
                         }
