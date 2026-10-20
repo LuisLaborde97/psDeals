@@ -324,7 +324,7 @@ async function blockHeavyResources(page: Page): Promise<void> {
   });
 }
 
-async function withRetries<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
+export async function withRetries<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       return await fn();
