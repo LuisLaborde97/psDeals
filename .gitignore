@@ -1,1 +1,4 @@
 .idea/
+
+# Configuración local de MCP
+.mcp.json
