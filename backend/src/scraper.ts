@@ -246,6 +246,7 @@ function toDeal(p: StoreProduct, region: string): Deal | null {
   const discountPercent = parsePercent(price.discountText, originalPrice, discountedPrice);
   if (discountPercent <= 0) return null;
 
+  const storeUrl = playStationProductUrl(region, p.id);
   return {
     id: p.id,
     title: p.name.trim(),
@@ -255,10 +256,17 @@ function toDeal(p: StoreProduct, region: string): Deal | null {
     discountedPriceText: price.discountedPrice ?? '',
     discountPercent,
     imageUrl: pickImage(p.media),
-    productUrl: `${STORE_URL}/${region}/product/${p.id}`,
+    // productUrl se conserva porque la app Android lo exige; storeUrl es el campo común a todas las tiendas.
+    productUrl: storeUrl,
+    platform: 'playstation',
+    storeUrl,
     region,
     genres: [], // se completan en la fase de géneros de scrapeDeals
   };
+}
+
+export function playStationProductUrl(region: string, productId: string): string {
+  return `${STORE_URL}/${region}/product/${productId}`;
 }
 
 /** "US$39.99", "$1,299.99", "1.299,99 €" → número. Null si no hay cifra (ej. "Gratis"). */
