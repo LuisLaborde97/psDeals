@@ -1,9 +1,16 @@
 import { getMessaging, type Message } from 'firebase-admin/messaging';
 import { initFirebase } from './firestore.js';
 import { errMsg } from './scraper.js';
-import type { Deal } from './types.js';
+import type { Deal, Platform } from './types.js';
 
 export const TOPIC = 'daily_deals';
+/** Nombre visible de cada tienda en los pushes (mismos textos que los chips de la app). */
+const PLATFORM_LABELS: Record<Platform, string> = {
+  playstation: 'PlayStation',
+  steam: 'Steam',
+  epic: 'Epic Games',
+  xbox: 'Xbox',
+};
 /** Canal de notificaciones que creará la app Android. */
 const ANDROID_CHANNEL_ID = 'daily_deals';
 /**
@@ -20,10 +27,10 @@ export async function notifyDeals(deals: Deal[]): Promise<{ sent: number; failed
 
   const sorted = [...deals].sort((a, b) => b.discountPercent - a.discountPercent);
   const individual = sorted.slice(0, MAX_PUSHES);
-  const remaining = sorted.length - individual.length;
+  const remaining = sorted.slice(MAX_PUSHES);
 
   const messages: Message[] = individual.map(dealMessage);
-  if (remaining > 0) messages.push(summaryMessage(remaining, sorted[0].region));
+  if (remaining.length > 0) messages.push(summaryMessage(remaining));
 
   let sent = 0;
   let failed = 0;
@@ -41,7 +48,8 @@ export async function notifyDeals(deals: Deal[]): Promise<{ sent: number; failed
 }
 
 export function dealMessage(deal: Deal): Message {
-  const title = `-${deal.discountPercent}% · ${deal.title}`;
+  // La tienda va primero: con varias tiendas, el mismo juego puede llegar desde dos de ellas.
+  const title = `[${PLATFORM_LABELS[deal.platform]}] -${deal.discountPercent}% · ${deal.title}`;
   const body = `${deal.discountedPriceText} (antes ${deal.originalPriceText})`;
   return {
     topic: TOPIC,
@@ -50,7 +58,9 @@ export function dealMessage(deal: Deal): Message {
     data: {
       type: 'deal',
       dealId: deal.id,
+      platform: deal.platform,
       productUrl: deal.productUrl,
+      storeUrl: deal.storeUrl,
       discountPercent: String(deal.discountPercent),
     },
     android: {
@@ -60,17 +70,34 @@ export function dealMessage(deal: Deal): Message {
   };
 }
 
-function summaryMessage(count: number, region: string): Message {
+/** Resumen de las ofertas que no tuvieron push propio, desglosado por tienda (la de más ofertas primero). */
+export function summaryMessage(deals: Deal[]): Message {
+  const counts = new Map<Platform, number>();
+  for (const d of deals) counts.set(d.platform, (counts.get(d.platform) ?? 0) + 1);
+  const platforms = [...counts].sort((a, b) => b[1] - a[1]);
+  const names = platforms.map(([p]) => PLATFORM_LABELS[p]);
+  // Con una sola tienda el título ya la nombra; el desglose solo aporta cuando hay varias.
+  const breakdown = platforms.length > 1 ? `${platforms.map(([p, n]) => `${PLATFORM_LABELS[p]}: ${n}`).join(' · ')}. ` : '';
   return {
     topic: TOPIC,
     notification: {
-      title: `¡${count} ofertas más de 50% o más!`,
-      body: 'Abre la app para verlas todas.',
+      title: `¡${deals.length} ofertas más de 50% o más en ${joinSpanish(names)}!`,
+      body: `${breakdown}Abre la app para verlas todas.`,
     },
-    data: { type: 'summary', count: String(count), region },
+    data: {
+      type: 'summary',
+      count: String(deals.length),
+      region: deals[0].region,
+      platforms: platforms.map(([p]) => p).join(','),
+    },
     android: {
       priority: 'high',
       notification: { channelId: ANDROID_CHANNEL_ID, tag: 'summary' },
     },
   };
+}
+
+/** ["Steam", "Epic Games", "PlayStation"] → "Steam, Epic Games y PlayStation". */
+function joinSpanish(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} y ${items.at(-1)}`;
 }
