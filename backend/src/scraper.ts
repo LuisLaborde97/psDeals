@@ -47,6 +47,8 @@ interface CategoryPage {
 
 export async function scrapeDeals(region: string): Promise<Deal[]> {
   const deals = new Map<string, Deal>();
+  /** Todos los productos vistos (con o sin descuento): la categoría de ofertas también lista precios completos. */
+  const seenProducts = new Set<string>();
   let browser: Browser | undefined;
 
   try {
@@ -59,6 +61,7 @@ export async function scrapeDeals(region: string): Promise<Deal[]> {
 
     const addAll = (products: StoreProduct[]) => {
       for (const p of products) {
+        if (p.id) seenProducts.add(p.id);
         const deal = toDeal(p, region);
         if (deal) deals.set(deal.id, deal);
       }
@@ -81,6 +84,7 @@ export async function scrapeDeals(region: string): Promise<Deal[]> {
     for (const categoryId of categoryIds) {
       genresByCategory.set(categoryId, await crawlCategory(page, region, categoryId, null, addAll));
     }
+    console.log(`[scraper] ${deals.size} con descuento de ${seenProducts.size} productos`);
 
     // 3. Géneros: un recorrido filtrado por cada género, etiquetando las ofertas que aparecen.
     if (deals.size > 0) {
@@ -113,8 +117,22 @@ async function scrapeDealsLanding(
 ): Promise<{ id: string; products: StoreProduct[] }[]> {
   const strands: { id: string; products: StoreProduct[] }[] = [];
   const pending: Promise<void>[] = [];
+  /** `views` de la experiencia "deals"; undefined si la respuesta no llegó. */
+  let landingViews: unknown;
 
   const onResponse = (res: HTTPResponse) => {
+    if (isGraphqlOp(res, 'getExperience')) {
+      pending.push(
+        res
+          .json()
+          .then((json) => {
+            const experience = json?.data?.emsExperienceRetrieve;
+            if (experience) landingViews = experience.views;
+          })
+          .catch(() => {}),
+      );
+      return;
+    }
     if (!isGraphqlOp(res, 'categoryStrandRetrieve')) return;
     pending.push(
       res
@@ -136,6 +154,15 @@ async function scrapeDealsLanding(
     await Promise.all(pending);
   } finally {
     page.off('response', onResponse);
+  }
+
+  // Entre campañas Sony publica la landing sin carruseles: no es un error, pero solo queda la categoría base.
+  if (landingViews === null || (Array.isArray(landingViews) && landingViews.length === 0)) {
+    console.warn(`[scraper] landing /pages/deals vacía en ${region} (views: null): Sony no publica carruseles de ofertas`);
+  } else if (strands.length === 0) {
+    console.warn(`[scraper] landing /pages/deals sin carruseles en ${region}: solo se recorrerá "Todas las ofertas"`);
+  } else {
+    console.log(`[scraper] landing /pages/deals: ${strands.length} carruseles`);
   }
   return strands;
 }
