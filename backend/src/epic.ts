@@ -10,7 +10,7 @@ import type { Deal } from './types.js';
 const ITAD_API_URL = 'https://api.isthereanydeal.com';
 /** ID de la Epic Games Store en IsThereAnyDeal (GET /service/shops/v1). */
 const ITAD_EPIC_SHOP_ID = 16;
-/** Máximo que acepta /deals/v2 por petición; ITAD los ordena por relevancia, como Steam. */
+/** Máximo que acepta /deals/v2 por petición; con sort=rank vienen primero los juegos más populares. */
 const MAX_RESULTS = Math.min(Number(process.env.EPIC_MAX_RESULTS ?? 200), 200);
 const FREE_GAMES_URL = 'https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions';
 const STORE_URL = 'https://store.epicgames.com';
@@ -65,10 +65,14 @@ async function fetchItadDeals(region: string, cc: string): Promise<Deal[]> {
     console.warn('[epic] falta ITAD_API_KEY: solo se usarán los juegos gratis de la colección oficial');
     return [];
   }
+  // ITAD solo sigue los precios regionales de Epic en algunos países (BR, AR…); para CO, MX o CL
+  // devuelve el precio de la tienda de EE. UU. en USD, no el COP que cobra Epic en Colombia.
   const params = new URLSearchParams({
     country: cc,
     shops: String(ITAD_EPIC_SHOP_ID),
     limit: String(MAX_RESULTS),
+    // Sin orden, ITAD devuelve casi solo juegos de relleno; rank = popularidad.
+    sort: 'rank',
     mature: 'true', // sin esto ITAD omite los juegos para adultos, que PlayStation y Steam sí incluyen
   });
   const res = await withRetries('epic ITAD /deals/v2', () =>
