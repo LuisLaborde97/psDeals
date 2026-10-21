@@ -78,6 +78,11 @@ class UserProfileRepository(
         }.await()
     }
 
+    /** Borra un término del historial; arrayRemove compara exacto, y recordSearch guarda el texto tal cual. */
+    suspend fun removeSearch(uid: String, query: String) {
+        doc(uid).update(FIELD_SEARCH_HISTORY, FieldValue.arrayRemove(query), FIELD_UPDATED_AT, FieldValue.serverTimestamp()).await()
+    }
+
     /**
      * Copia wishlist e historial de un perfil anónimo abandonado al perfil de [toUid]. Hay que leer
      * [from] antes de cambiar de sesión: después, las reglas ya no dejan leer el documento anónimo.

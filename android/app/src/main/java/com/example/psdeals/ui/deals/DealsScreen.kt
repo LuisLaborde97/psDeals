@@ -5,7 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.annotation.DrawableRes
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -24,6 +30,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -233,6 +244,14 @@ fun DealsScreen(
                 query = viewModel.searchQuery,
                 onQueryChange = viewModel::onSearchQueryChange,
                 onSearch = recordSearch,
+                history = account.searchHistory,
+                onHistoryClick = { term ->
+                    viewModel.onSearchQueryChange(term)
+                    // Vuelve a guardarla para subirla al primer puesto del historial.
+                    lastRecordedSearch = ""
+                    recordSearch(term)
+                },
+                onRemoveHistory = accountViewModel::removeSearch,
             )
             PlatformChips(
                 selectedPlatform = selectedPlatform,
@@ -287,14 +306,29 @@ fun DealsScreen(
 }
 
 @Composable
-private fun SearchField(query: String, onQueryChange: (String) -> Unit, onSearch: (String) -> Unit) {
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    history: List<String>,
+    onHistoryClick: (String) -> Unit,
+    onRemoveHistory: (String) -> Unit,
+) {
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    var isFocused by remember { mutableStateOf(false) }
+    // Solo con el campo vacío: en cuanto escribe, la lista filtrada ya es la respuesta.
+    val showHistory = isFocused && query.isEmpty() && history.isNotEmpty()
+    // "Atrás" cierra primero el panel en vez de salir de la app.
+    BackHandler(enabled = showHistory) { focusManager.clearFocus() }
+
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .onFocusChanged { isFocused = it.isFocused },
         placeholder = { Text("Buscar juegos…") },
         leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
         trailingIcon = if (query.isNotEmpty()) {
@@ -324,6 +358,81 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit, onSearch
             },
         ),
     )
+    AnimatedVisibility(visible = showHistory, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        SearchHistoryPanel(
+            history = history,
+            onClick = { term ->
+                onHistoryClick(term)
+                focusManager.clearFocus() // cierra panel y teclado: el usuario ya eligió
+            },
+            onRemove = onRemoveHistory,
+        )
+    }
+}
+
+/**
+ * Debajo del buscador, en el flujo de la pantalla (empuja los chips), y no como popup flotante:
+ * con el teclado abierto un popup se solaparía con él. Opaco para leerse sobre la grilla.
+ */
+@Composable
+private fun SearchHistoryPanel(history: List<String>, onClick: (String) -> Unit, onRemove: (String) -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    ) {
+        Text(
+            "Búsquedas recientes",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+        )
+        // Tope de alto: con 20 términos el panel taparía media pantalla.
+        Column(
+            modifier = Modifier
+                .heightIn(max = 280.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 4.dp),
+        ) {
+            history.forEach { term ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClickLabel = "Buscar $term") { onClick(term) }
+                        .padding(start = 16.dp),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_history),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        term,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { onRemove(term) }) {
+                        Icon(
+                            painterResource(R.drawable.ic_close),
+                            contentDescription = "Borrar \"$term\" del historial",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** `null` representa "Todas": no es una tienda, así que no vive en [StorePlatform]. */

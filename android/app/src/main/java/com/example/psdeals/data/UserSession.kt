@@ -100,6 +100,11 @@ class UserSession(
         profiles.recordSearch(uid, query)
     }
 
+    suspend fun removeSearch(query: String) {
+        val uid = if (profileReady) auth.currentUser?.uid ?: start().uid else start().uid
+        profiles.removeSearch(uid, query)
+    }
+
     /** Vuelve a un usuario anónimo nuevo (con perfil vacío). */
     suspend fun signOut(): FirebaseUser {
         profileReady = false
