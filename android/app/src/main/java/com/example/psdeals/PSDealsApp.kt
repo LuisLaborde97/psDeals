@@ -21,7 +21,7 @@ class PSDealsApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        DealsNotifications.createChannel(this)
+        DealsNotifications.createChannels(this)
         DealsNotifications.subscribeToTopic()
         // En segundo plano y sin bloquear la UI: las ofertas se leen igual mientras tanto. Si falla
         // (sin conexión), se reintenta en el próximo arranque; la sesión ya creada persiste en disco.

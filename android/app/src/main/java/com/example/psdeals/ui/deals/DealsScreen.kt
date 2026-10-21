@@ -1,9 +1,7 @@
 package com.example.psdeals.ui.deals
 
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.annotation.DrawableRes
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -99,13 +97,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.example.psdeals.R
 import com.example.psdeals.model.Deal
 import com.example.psdeals.model.StorePlatform
+import com.example.psdeals.ui.openStoreUrl
 import com.example.psdeals.ui.account.AccountButton
 import com.example.psdeals.ui.account.AccountDialog
 import com.example.psdeals.ui.account.AccountViewModel
@@ -549,7 +547,7 @@ fun DealsGrid(
             val expired = isExpired(deal)
             DealCard(
                 deal = deal,
-                onClick = { openProduct(context, deal.storeUrl ?: deal.productUrl) },
+                onClick = { context.openStoreUrl(deal.storeUrl ?: deal.productUrl) },
                 isWishlisted = deal.id in wishlist,
                 onToggleWishlist = { onToggleWishlist(deal.id) },
                 onShare = { shareDeal(context, deal, expired) },
@@ -864,15 +862,6 @@ private fun ScrollableCentered(content: @Composable () -> Unit) {
 /** El CDN de la PS Store redimensiona con `?w=`: ~15 KB en vez de ~800 KB por portada. */
 private fun resized(url: String): String =
     if (url.contains("image.api.playstation.com") && !url.contains('?')) "$url?w=440" else url
-
-/** Abre la app nativa de la tienda si está instalada y reclama el dominio (App Links); si no, el navegador. */
-private fun openProduct(context: Context, url: String) {
-    try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
-    } catch (e: ActivityNotFoundException) {
-        Log.w("DealsScreen", "No hay app para abrir $url", e)
-    }
-}
 
 /** Hoja de compartir del sistema con un texto listo para WhatsApp, Telegram, etc. */
 private fun shareDeal(context: Context, deal: Deal, isExpired: Boolean) {

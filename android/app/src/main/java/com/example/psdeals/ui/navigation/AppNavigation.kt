@@ -15,6 +15,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,9 +45,19 @@ private enum class Tab(val route: String, val label: String, @DrawableRes val ic
     WISHLIST(Routes.WISHLIST, "Favoritos", R.drawable.ic_favorite_border, R.drawable.ic_favorite),
 }
 
+/**
+ * @param openWishlistRequest se tocó una alerta de wishlist: se cambia a Favoritos y se avisa con
+ *   [onOpenWishlistHandled] para que el pedido no se repita en la siguiente recomposición.
+ */
 @Composable
-fun AppNavigation() {
+fun AppNavigation(openWishlistRequest: Boolean = false, onOpenWishlistHandled: () -> Unit = {}) {
     val navController = rememberNavController()
+    LaunchedEffect(openWishlistRequest) {
+        if (openWishlistRequest) {
+            navController.navigateToTab(Routes.WISHLIST)
+            onOpenWishlistHandled()
+        }
+    }
     // Un solo AccountViewModel para toda la app (alcance de la Activity): la insignia, el login y los
     // corazones de ambas pantallas leen el mismo estado.
     val accountViewModel: AccountViewModel = viewModel(factory = AccountViewModel.Factory)

@@ -19,17 +19,30 @@ import com.google.firebase.messaging.messaging
 object DealsNotifications {
     private const val TAG = "DealsNotifications"
 
-    /** Debe coincidir con `channelId` que envía el backend (notify.ts). */
+    /** Deben coincidir con el `channelId` que envía el backend (notify.ts y wishlistAlerts.ts). */
     const val CHANNEL_ID = "daily_deals"
+    const val WISHLIST_CHANNEL_ID = "wishlist_alerts"
     const val TOPIC = "daily_deals"
 
-    /** Idempotente: crear un canal que ya existe no hace nada. NotificationManagerCompat ignora API < 26. */
-    fun createChannel(context: Context) {
-        val channel = NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
-            .setName(context.getString(R.string.channel_daily_deals_name))
-            .setDescription(context.getString(R.string.channel_daily_deals_description))
-            .build()
-        NotificationManagerCompat.from(context).createNotificationChannel(channel)
+    /**
+     * Idempotente: crear un canal que ya existe no hace nada. NotificationManagerCompat ignora API < 26.
+     * Canales separados para que el usuario pueda silenciar las ofertas del día sin perder las alertas
+     * de su lista de deseos (Ajustes → Notificaciones de la app).
+     */
+    fun createChannels(context: Context) {
+        val manager = NotificationManagerCompat.from(context)
+        manager.createNotificationChannel(
+            NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
+                .setName(context.getString(R.string.channel_daily_deals_name))
+                .setDescription(context.getString(R.string.channel_daily_deals_description))
+                .build(),
+        )
+        manager.createNotificationChannel(
+            NotificationChannelCompat.Builder(WISHLIST_CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_HIGH)
+                .setName(context.getString(R.string.channel_wishlist_alerts_name))
+                .setDescription(context.getString(R.string.channel_wishlist_alerts_description))
+                .build(),
+        )
     }
 
     /**
@@ -46,8 +59,13 @@ object DealsNotifications {
         }
     }
 
-    /** Muestra un push recibido con la app en primer plano (FCM no lo muestra solo en ese caso). */
-    fun show(context: Context, title: String?, body: String?, tag: String) {
+    /**
+     * Muestra un push recibido con la app en primer plano (FCM no lo muestra solo en ese caso).
+     *
+     * @param data el bloque `data` del push: va como extras del intent, igual que cuando FCM muestra la
+     *   notificación en segundo plano, para que MainActivity maneje el toque de la misma forma.
+     */
+    fun show(context: Context, title: String?, body: String?, tag: String, data: Map<String, String>) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -56,13 +74,18 @@ object DealsNotifications {
             return
         }
 
+        val launch = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        data.forEach { (key, value) -> launch.putExtra(key, value) }
         val openApp = PendingIntent.getActivity(
             context,
-            0,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            // requestCode distinto por notificación: con uno fijo, FLAG_UPDATE_CURRENT reemplazaría los extras
+            // de las notificaciones anteriores y todas abrirían el último juego.
+            tag.hashCode(),
+            launch,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val channel = if (data[NotificationTap.KEY_TYPE] == NotificationTap.TYPE_WISHLIST_ALERT) WISHLIST_CHANNEL_ID else CHANNEL_ID
+        val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)

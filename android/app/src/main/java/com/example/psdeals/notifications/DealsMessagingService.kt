@@ -6,8 +6,8 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
 /**
- * - App en segundo plano: FCM muestra la notificación solo, en el canal `daily_deals`,
- *   y este método NO se llama.
+ * - App en segundo plano: FCM muestra la notificación solo, en el canal que indique el backend
+ *   (`daily_deals` o `wishlist_alerts`), y este método NO se llama.
  * - App en primer plano: FCM entrega el mensaje aquí y no muestra nada, por eso lo mostramos.
  */
 class DealsMessagingService : FirebaseMessagingService() {
@@ -18,7 +18,7 @@ class DealsMessagingService : FirebaseMessagingService() {
 
         if (notification != null) {
             val tag = message.data["dealId"] ?: message.data["type"] ?: message.messageId ?: "push"
-            DealsNotifications.show(this, notification.title, notification.body, tag)
+            DealsNotifications.show(this, notification.title, notification.body, tag, message.data)
         }
     }
 
