@@ -3,6 +3,7 @@ import { notifyDeals } from './notify.js';
 import { errMsg, scrapeDeals } from './scraper.js';
 import { scrapeEpicDeals } from './epic.js';
 import { scrapeSteamDeals } from './steam.js';
+import { scrapeXboxDeals } from './xbox.js';
 import type { Deal, Platform } from './types.js';
 
 /** Un motor por tienda; todos reciben la región de la PS Store (ej. es-co) y la adaptan a su API. */
@@ -10,6 +11,7 @@ const ENGINES: { platform: Platform; scrape: (region: string) => Promise<Deal[]>
   { platform: 'playstation', scrape: scrapeDeals },
   { platform: 'steam', scrape: scrapeSteamDeals },
   { platform: 'epic', scrape: scrapeEpicDeals },
+  { platform: 'xbox', scrape: scrapeXboxDeals },
 ];
 
 async function main(): Promise<number> {

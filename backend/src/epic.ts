@@ -1,4 +1,4 @@
-import { errMsg, withRetries } from './scraper.js';
+import { errMsg, formatPrice, withRetries } from './scraper.js';
 import type { Deal } from './types.js';
 
 /**
@@ -165,14 +165,6 @@ function epicId(title: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
   return `epic-${slug}`;
-}
-
-/** Mismo formato para las dos fuentes: "COP 28.789,00"; "Gratis" si es 0. */
-function formatPrice(amount: number, currency: string): string {
-  if (amount === 0) return 'Gratis';
-  return new Intl.NumberFormat('es-CO', { style: 'currency', currency, currencyDisplay: 'code' })
-    .format(amount)
-    .replace(/ /g, ' ');
 }
 
 async function fetchJson<T>(url: string, headers: Record<string, string> = {}): Promise<T> {

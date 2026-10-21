@@ -280,6 +280,14 @@ export function parsePrice(text: string | null | undefined): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/** Para tiendas que dan el precio como número: "COP 28.789" (formato colombiano); "Gratis" si es 0. */
+export function formatPrice(amount: number, currency: string): string {
+  if (amount === 0) return 'Gratis';
+  return new Intl.NumberFormat('es-CO', { style: 'currency', currency, currencyDisplay: 'code' })
+    .format(amount)
+    .replace(/ /g, ' ');
+}
+
 function parsePercent(text: string, original: number | null, discounted: number | null): number {
   const m = text.match(/(\d{1,3})/);
   if (m) return Number(m[1]);
