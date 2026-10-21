@@ -53,6 +53,12 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.auth)
+    // Login con Google vía Credential Manager: reemplaza al GoogleSignIn obsoleto de play-services-auth;
+    // credentials-play-services-auth es el puente con Play Services en Android 13 y anteriores.
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)

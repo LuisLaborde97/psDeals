@@ -1,0 +1,32 @@
+rules_version = '2';
+
+// Reglas de Firestore de PSDeals. Se publican desde la consola de Firebase (Firestore → Reglas).
+// El backend usa el Admin SDK, que no pasa por estas reglas.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Ofertas: la app solo las lee; las escribe exclusivamente el scraper.
+    match /deals/{dealId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Perfil de cada usuario (anónimo o vinculado con Google): solo su dueño lo lee o modifica.
+    match /users/{uid} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+      // Topes acordes a la app (MAX_SEARCH_HISTORY = 20) para que nadie infle su documento.
+      function isValidProfile() {
+        let data = request.resource.data;
+        return data.uid == uid
+          && data.isAnonymous is bool
+          && data.wishlist is list && data.wishlist.size() <= 1000
+          && data.searchHistory is list && data.searchHistory.size() <= 20;
+      }
+
+      allow read, delete: if isOwner();
+      allow create, update: if isOwner() && isValidProfile();
+    }
+  }
+}
