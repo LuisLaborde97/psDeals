@@ -277,6 +277,7 @@ private fun PlatformChips(selectedPlatform: StorePlatform?, onPlatformClick: (St
                 selected = platform == selectedPlatform,
                 onClick = { onPlatformClick(platform) },
                 brandColor = platform.brandColor,
+                icon = platform.iconRes,
             )
         }
     }
@@ -295,9 +296,18 @@ private fun GenreChips(genres: List<String>, selectedGenre: String?, onGenreClic
     }
 }
 
-/** @param brandColor relleno al estar seleccionado (texto blanco); null = colores del tema ("Todas" y géneros). */
+/**
+ * @param brandColor relleno al estar seleccionado (texto blanco); null = colores del tema ("Todas" y géneros).
+ * @param icon logo fijo en lugar del check: el relleno de marca ya indica la selección.
+ */
 @Composable
-private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit, brandColor: Color? = null) {
+private fun SelectableChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    brandColor: Color? = null,
+    @DrawableRes icon: Int? = null,
+) {
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -323,16 +333,15 @@ private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit
                 selectedBorderWidth = 1.dp,
             )
         },
-        leadingIcon = if (selected) {
-            {
-                Icon(
-                    painterResource(R.drawable.ic_check),
-                    contentDescription = null,
-                    modifier = Modifier.size(FilterChipDefaults.IconSize),
-                )
+        // Sin tint explícito: FilterChip aplica leadingIconColor (gris neutro) o selectedLeadingIconColor (blanco).
+        leadingIcon = when {
+            icon != null -> {
+                { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
             }
-        } else {
-            null
+            selected -> {
+                { Icon(painterResource(R.drawable.ic_check), contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
+            }
+            else -> null
         },
     )
 }
