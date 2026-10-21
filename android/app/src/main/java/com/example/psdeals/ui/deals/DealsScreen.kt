@@ -276,6 +276,7 @@ private fun PlatformChips(selectedPlatform: StorePlatform?, onPlatformClick: (St
                 label = platform.label,
                 selected = platform == selectedPlatform,
                 onClick = { onPlatformClick(platform) },
+                brandColor = platform.brandColor,
             )
         }
     }
@@ -294,12 +295,34 @@ private fun GenreChips(genres: List<String>, selectedGenre: String?, onGenreClic
     }
 }
 
+/** @param brandColor relleno al estar seleccionado (texto blanco); null = colores del tema ("Todas" y géneros). */
 @Composable
-private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit, brandColor: Color? = null) {
     FilterChip(
         selected = selected,
         onClick = onClick,
         label = { Text(label) },
+        colors = if (brandColor == null) {
+            FilterChipDefaults.filterChipColors()
+        } else {
+            FilterChipDefaults.filterChipColors(
+                selectedContainerColor = brandColor,
+                selectedLabelColor = Color.White,
+                selectedLeadingIconColor = Color.White,
+            )
+        },
+        // Los rellenos de marca son oscuros (Epic queda en 1.4:1 contra el grafito): el borde translúcido
+        // conserva la silueta del chip seleccionado sobre el fondo.
+        border = if (brandColor == null) {
+            FilterChipDefaults.filterChipBorder(enabled = true, selected = selected)
+        } else {
+            FilterChipDefaults.filterChipBorder(
+                enabled = true,
+                selected = selected,
+                selectedBorderColor = Color.White.copy(alpha = 0.35f),
+                selectedBorderWidth = 1.dp,
+            )
+        },
         leadingIcon = if (selected) {
             {
                 Icon(
@@ -437,6 +460,18 @@ private fun DiscountBadge(percent: Int, modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * Color de marca para el chip seleccionado. Todos dan ≥ 7:1 (WCAG AAA) con texto blanco; por eso
+ * PlayStation y Xbox usan tonos más oscuros que sus colores insignia (#0070D1 = 4.95:1, #107C10 = 5.37:1).
+ */
+private val StorePlatform.brandColor: Color
+    get() = when (this) {
+        StorePlatform.PLAYSTATION -> Color(0xFF00439C) // 9.20:1
+        StorePlatform.STEAM -> Color(0xFF2A475E) // 9.72:1
+        StorePlatform.EPIC -> Color(0xFF313131) // 13.01:1
+        StorePlatform.XBOX -> Color(0xFF0E5F0E) // 7.89:1
+    }
 
 /** Logo de la tienda (res/drawable). Vive en la UI para que el modelo no dependa de recursos de Android. */
 @get:DrawableRes
