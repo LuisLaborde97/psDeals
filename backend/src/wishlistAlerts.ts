@@ -13,8 +13,11 @@ const MAX_MULTICAST_TOKENS = 500;
 const MAX_BATCH_OPS = 450;
 /** Mismo umbral que la app (DealsRepository.STALE_AFTER_MS): sin verla 3 días, la oferta había terminado. */
 const BACK_ON_SALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
-/** Canal que ya crea la app; uno propio para estas alertas permitiría silenciarlas por separado. */
-const ANDROID_CHANNEL_ID = 'daily_deals';
+/**
+ * Canal propio de la app (DealsNotifications.WISHLIST_CHANNEL_ID): el usuario puede silenciar las ofertas
+ * del día sin perder estas. En versiones de la app sin este canal, Android usa el canal por defecto del manifiesto.
+ */
+const ANDROID_CHANNEL_ID = 'wishlist_alerts';
 /**
  * Errores que significan que el token ya no sirve (app desinstalada, datos borrados, token rotado).
  * `invalid-argument` NO está: también lo produce un payload mal formado, y borraría tokens válidos.
