@@ -18,19 +18,44 @@ export function initFirebase(): void {
   initializeApp({ credential: cert(process.env.GOOGLE_APPLICATION_CREDENTIALS || DEFAULT_KEY_PATH) });
 }
 
-/**
- * Inserta o actualiza las ofertas en `deals` y devuelve solo las que deben notificarse:
- * documentos que NO existían antes de esta ejecución y con descuento >= 50 %.
- * Una oferta nueva cuyo lote falla al escribirse no se devuelve, así la siguiente
- * ejecución la vuelve a ver como nueva y no se notifica algo que no quedó guardado.
- */
-export async function saveDeals(deals: Deal[]): Promise<Deal[]> {
+/** Lo que había en Firestore antes de esta ejecución; es la base para detectar rebajas. */
+export interface PreviousDeal {
+  discountedPrice: number | null;
+  discountedPriceText: string;
+  /** Epoch millis; null en documentos sin el campo. */
+  lastSeenAt: number | null;
+}
+
+export interface SaveResult {
+  /** Ofertas nuevas con >= PUSH_MIN_DISCOUNT % (push al topic general). */
+  newPushCandidates: Deal[];
+  /** IDs cuyo lote se escribió: solo de esas se avisa, para no notificar algo que no quedó guardado. */
+  savedIds: Set<string>;
+}
+
+/** Estado previo de las ofertas, en una sola pasada y leyendo solo los campos que hacen falta. */
+export async function loadPreviousDeals(deals: Deal[]): Promise<Map<string, PreviousDeal>> {
   initFirebase();
   const db = getFirestore();
   const refs = deals.map((d) => db.collection(COLLECTION).doc(d.id));
-  const existing = await fetchExistingIds(db, refs);
+  return fetchPrevious(db, refs);
+}
+
+/**
+ * Inserta o actualiza las ofertas en `deals`. Devuelve las nuevas que merecen push general
+ * (documentos que NO existían, con descuento >= 50 %) y qué IDs se guardaron.
+ * Una oferta nueva cuyo lote falla al escribirse no se devuelve, así la siguiente
+ * ejecución la vuelve a ver como nueva y no se notifica algo que no quedó guardado.
+ *
+ * @param previous estado previo ya leído (index.ts lo necesita antes para detectar rebajas).
+ */
+export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDeal>): Promise<SaveResult> {
+  initFirebase();
+  const db = getFirestore();
+  const existing = previous ?? (await loadPreviousDeals(deals));
 
   const pushCandidates: Deal[] = [];
+  const savedIds = new Set<string>();
   let written = 0;
   let failed = 0;
 
@@ -67,6 +92,7 @@ export async function saveDeals(deals: Deal[]): Promise<Deal[]> {
       await batch.commit();
       written += chunk.length;
       pushCandidates.push(...newInChunk);
+      for (const deal of chunk) savedIds.add(deal.id);
     } catch (err) {
       failed += chunk.length;
       console.error(`[firestore] lote ${i / MAX_BATCH_OPS + 1} falló (${chunk.length} docs): ${errMsg(err)}`);
@@ -76,14 +102,24 @@ export async function saveDeals(deals: Deal[]): Promise<Deal[]> {
   console.log(
     `[firestore] ${written} escritos (${deals.length - existing.size} nuevos, ${existing.size} actualizados), ${failed} fallidos`,
   );
-  return pushCandidates;
+  return { newPushCandidates: pushCandidates, savedIds };
 }
 
-async function fetchExistingIds(db: Firestore, refs: DocumentReference[]): Promise<Set<string>> {
-  const ids = new Set<string>();
+async function fetchPrevious(db: Firestore, refs: DocumentReference[]): Promise<Map<string, PreviousDeal>> {
+  const previous = new Map<string, PreviousDeal>();
   for (let i = 0; i < refs.length; i += READ_CHUNK) {
-    const snaps = await db.getAll(...refs.slice(i, i + READ_CHUNK), { fieldMask: [] });
-    for (const snap of snaps) if (snap.exists) ids.add(snap.id);
+    const snaps = await db.getAll(...refs.slice(i, i + READ_CHUNK), {
+      fieldMask: ['discountedPrice', 'discountedPriceText', 'lastSeenAt'],
+    });
+    for (const snap of snaps) {
+      if (!snap.exists) continue;
+      const price = snap.get('discountedPrice');
+      previous.set(snap.id, {
+        discountedPrice: typeof price === 'number' ? price : null,
+        discountedPriceText: snap.get('discountedPriceText') ?? '',
+        lastSeenAt: snap.get('lastSeenAt')?.toMillis?.() ?? null,
+      });
+    }
   }
-  return ids;
+  return previous;
 }

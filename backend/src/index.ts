@@ -1,8 +1,9 @@
-import { PUSH_MIN_DISCOUNT, saveDeals } from './firestore.js';
+import { PUSH_MIN_DISCOUNT, loadPreviousDeals, saveDeals } from './firestore.js';
 import { notifyDeals } from './notify.js';
 import { errMsg, scrapeDeals } from './scraper.js';
 import { scrapeEpicDeals } from './epic.js';
 import { scrapeSteamDeals } from './steam.js';
+import { findWishlistAlerts, sendWishlistAlerts } from './wishlistAlerts.js';
 import { scrapeXboxDeals } from './xbox.js';
 import type { Deal, Platform } from './types.js';
 
@@ -74,14 +75,44 @@ async function main(): Promise<number> {
       `[dry-run] Se escribirían ${deals.length} documentos en "deals". ` +
         `${candidates} tienen >= ${PUSH_MIN_DISCOUNT}% y recibirían push si son nuevos en Firestore.`,
     );
+    // Solo lectura: detecta las alertas de wishlist y FCM valida los mensajes sin entregarlos.
+    try {
+      const alerts = findWishlistAlerts(deals, await loadPreviousDeals(deals));
+      printAlerts(alerts);
+      await sendWishlistAlerts(alerts, { dryRun: true });
+    } catch (err) {
+      console.warn(`[dry-run] no se pudieron revisar las alertas de wishlist (¿credenciales?): ${errMsg(err)}`);
+    }
     return brokenEngines > 0 ? 1 : 0;
   }
 
-  const toNotify = await saveDeals(deals);
-  console.log(`[main] ${toNotify.length} ofertas nuevas con >= ${PUSH_MIN_DISCOUNT}%`);
-  const { failed } = await notifyDeals(toNotify);
+  // El estado previo se lee una vez y antes de escribir: después ya no quedaría el precio anterior.
+  const previous = await loadPreviousDeals(deals);
+  const alerts = findWishlistAlerts(deals, previous);
+  printAlerts(alerts);
+  const { newPushCandidates, savedIds } = await saveDeals(deals, previous);
+  console.log(`[main] ${newPushCandidates.length} ofertas nuevas con >= ${PUSH_MIN_DISCOUNT}%`);
+  const { failed } = await notifyDeals(newPushCandidates);
+  // Tokens fallidos (teléfonos desinstalados) son normales y se limpian: no marcan la ejecución como fallida.
+  await sendWishlistAlerts(alerts.filter((a) => savedIds.has(a.deal.id)));
   // Un motor roto marca la ejecución como fallida para que se note en GitHub Actions.
   return failed > 0 || brokenEngines > 0 ? 1 : 0;
+}
+
+function printAlerts(alerts: ReturnType<typeof findWishlistAlerts>): void {
+  const drops = alerts.filter((a) => a.reason === 'price_drop').length;
+  console.log(`[alerts] ${alerts.length} candidatas a alerta de wishlist (${drops} rebajas, ${alerts.length - drops} ofertas que volvieron)`);
+  if (alerts.length > 0) {
+    console.table(
+      alerts.slice(0, 15).map((a) => ({
+        id: a.deal.id,
+        título: a.deal.title.slice(0, 40),
+        motivo: a.reason,
+        antes: a.previousPriceText,
+        ahora: a.deal.discountedPriceText,
+      })),
+    );
+  }
 }
 
 main()

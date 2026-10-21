@@ -5,7 +5,7 @@ import type { Deal, Platform } from './types.js';
 
 export const TOPIC = 'daily_deals';
 /** Nombre visible de cada tienda en los pushes (mismos textos que los chips de la app). */
-const PLATFORM_LABELS: Record<Platform, string> = {
+export const PLATFORM_LABELS: Record<Platform, string> = {
   playstation: 'PlayStation',
   steam: 'Steam',
   epic: 'Epic Games',
