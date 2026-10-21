@@ -78,6 +78,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -115,6 +116,7 @@ import kotlinx.coroutines.delay
 private val DiscountBadgeColor = Color(0xFFD62839)
 private const val SUPER_DEAL_THRESHOLD = 70
 private const val EXPIRED_ALPHA = 0.55f
+private const val DEAL_CARD_CONTENT_TYPE = "deal_card"
 /** Mínimo para guardar una búsqueda: con 1-2 letras casi siempre es una búsqueda a medio escribir. */
 private const val MIN_SEARCH_LENGTH = 3
 private const val SEARCH_RECORD_DELAY_MS = 1_500L
@@ -547,7 +549,9 @@ fun DealsGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(deals, key = { it.id }) { deal ->
+        // contentType: todas las celdas son del mismo tipo, así Compose reutiliza las jerarquías de las tarjetas
+        // que salen de pantalla en vez de crearlas desde cero en cada lanzamiento rápido.
+        items(deals, key = { it.id }, contentType = { DEAL_CARD_CONTENT_TYPE }) { deal ->
             val expired = isExpired(deal)
             DealCard(
                 deal = deal,
@@ -583,7 +587,8 @@ fun DealCard(
         modifier = modifier
             .fillMaxWidth()
             // Atenúa la tarjeta entera, botones incluidos (siguen siendo tocables: alpha no afecta a los toques).
-            .graphicsLayer { alpha = if (isExpired) EXPIRED_ALPHA else 1f },
+            // Solo en las terminadas: antes cada tarjeta llevaba su capa gráfica aunque su alpha fuera 1.
+            .then(if (isExpired) Modifier.alpha(EXPIRED_ALPHA) else Modifier),
         shape = RoundedCornerShape(16.dp),
         // Cristal: translúcida para que el degradado se asome; sin elevación, así la sombra no se ve a través.
         // contentColor explícito por la misma razón que en el Scaffold: un color con alpha no tiene pareja en el tema.
@@ -863,9 +868,20 @@ private fun ScrollableCentered(content: @Composable () -> Unit) {
     }
 }
 
-/** El CDN de la PS Store redimensiona con `?w=`: ~15 KB en vez de ~800 KB por portada. */
-private fun resized(url: String): String =
-    if (url.contains("image.api.playstation.com") && !url.contains('?')) "$url?w=440" else url
+/**
+ * Pide las portadas ya reducidas a la CDN de cada tienda. Coil decodifica al tamaño de la tarjeta, pero
+ * antes tiene que descargar y decodificar el archivo entero: con una portada de 3 MB eso cuesta CPU y
+ * memoria justo durante el primer scroll. Xbox ya llega con `?w=440` desde el backend; Steam e ITAD
+ * sirven portadas de ~50 KB.
+ */
+private fun resized(url: String): String = when {
+    url.contains('?') && !url.contains("cdn1.epicgames.com") -> url
+    // `?w=`: ~15-60 KB en vez de ~800 KB.
+    url.contains("image.api.playstation.com") -> "$url?w=440"
+    // Portadas oficiales de Epic: 0,4-3,3 MB originales → 24-59 KB. resize=1 conserva la proporción.
+    url.contains("cdn1.epicgames.com") -> url + (if (url.contains('?')) "&" else "?") + "resize=1&w=480&h=720"
+    else -> url
+}
 
 /** Hoja de compartir del sistema con un texto listo para WhatsApp, Telegram, etc. */
 private fun shareDeal(context: Context, deal: Deal, isExpired: Boolean) {
