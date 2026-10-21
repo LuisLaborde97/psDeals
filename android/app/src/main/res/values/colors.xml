@@ -7,4 +7,6 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- Primer tono de LightGradient (DealsScreen.kt); values-night/ tiene el de DarkGradient. -->
+    <color name="window_background">#FFE8F0FF</color>
 </resources>

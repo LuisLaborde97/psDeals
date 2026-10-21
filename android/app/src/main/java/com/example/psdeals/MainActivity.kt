@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.psdeals.notifications.NotificationTap
 import com.example.psdeals.ui.navigation.AppNavigation
 import com.example.psdeals.ui.openStoreUrl
@@ -31,6 +32,8 @@ class MainActivity : ComponentActivity() {
     private var openWishlistRequest by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Antes de super.onCreate(): cambia del tema de arranque (Theme.PSDeals.Starting) al de la app.
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Solo en el primer arranque de la Activity, no en cada rotación: al recrearse (rotación, cambio de

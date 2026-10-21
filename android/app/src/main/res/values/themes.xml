@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.PSDeals" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        Fondo de la ventana = primer tono del degradado de Compose: sin él, el tema heredaba blanco y en
+        modo oscuro se veía un destello blanco entre la splash y el primer cuadro de la app.
+    -->
+    <style name="Theme.PSDeals" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+
+    <!-- Tema de arranque (core-splashscreen): MainActivity pasa a Theme.PSDeals al llamar installSplashScreen(). -->
+    <style name="Theme.PSDeals.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/window_background</item>
+        <!-- Mismo logo y disco que el ícono del launcher: la transición desde el ícono tocado es continua. -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.PSDeals</item>
+    </style>
 </resources>
