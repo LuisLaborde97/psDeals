@@ -546,12 +546,14 @@ fun DealsGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(deals, key = { it.id }) { deal ->
+            val expired = isExpired(deal)
             DealCard(
                 deal = deal,
                 onClick = { openProduct(context, deal.storeUrl ?: deal.productUrl) },
                 isWishlisted = deal.id in wishlist,
                 onToggleWishlist = { onToggleWishlist(deal.id) },
-                isExpired = isExpired(deal),
+                onShare = { shareDeal(context, deal, expired) },
+                isExpired = expired,
             )
         }
     }
@@ -568,13 +570,17 @@ fun DealCard(
     modifier: Modifier = Modifier,
     isWishlisted: Boolean = false,
     onToggleWishlist: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
     isExpired: Boolean = false,
 ) {
+    // Card(onClick) y no Modifier.clickable: así el ripple se recorta a las esquinas redondeadas (antes se
+    // dibujaba rectangular por fuera). El corazón y compartir son botones propios: consumen su toque, y
+    // su ripple circular no dispara el de la tarjeta.
     Card(
+        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            // Atenúa la tarjeta entera, corazón incluido (sigue siendo tocable: alpha no afecta a los toques).
+            // Atenúa la tarjeta entera, botones incluidos (siguen siendo tocables: alpha no afecta a los toques).
             .graphicsLayer { alpha = if (isExpired) EXPIRED_ALPHA else 1f },
         shape = RoundedCornerShape(16.dp),
         // Cristal: translúcida para que el degradado se asome; sin elevación, así la sombra no se ve a través.
@@ -641,20 +647,35 @@ fun DealCard(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            Text(
-                text = deal.originalPriceText,
-                style = MaterialTheme.typography.bodySmall,
-                // onSurface (no White) para que también funcione en modo claro; alpha 0.7 lo hace secundario
-                // y mantiene AA (con 0.6 bajaba a 4.3:1 en modo claro).
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                textDecoration = TextDecoration.LineThrough,
-            )
-            Text(
-                text = deal.discountedPriceText,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = deal.originalPriceText,
+                        style = MaterialTheme.typography.bodySmall,
+                        // onSurface (no White) para que también funcione en modo claro; alpha 0.7 lo hace secundario
+                        // y mantiene AA (con 0.6 bajaba a 4.3:1 en modo claro).
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        textDecoration = TextDecoration.LineThrough,
+                    )
+                    Text(
+                        text = deal.discountedPriceText,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                // En la zona de texto y no sobre la portada: cada esquina de la imagen tiene una sola acción.
+                if (onShare != null) {
+                    IconButton(onClick = onShare, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_share),
+                            contentDescription = "Compartir oferta",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -844,12 +865,32 @@ private fun ScrollableCentered(content: @Composable () -> Unit) {
 private fun resized(url: String): String =
     if (url.contains("image.api.playstation.com") && !url.contains('?')) "$url?w=440" else url
 
+/** Abre la app nativa de la tienda si está instalada y reclama el dominio (App Links); si no, el navegador. */
 private fun openProduct(context: Context, url: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
     } catch (e: ActivityNotFoundException) {
         Log.w("DealsScreen", "No hay app para abrir $url", e)
     }
+}
+
+/** Hoja de compartir del sistema con un texto listo para WhatsApp, Telegram, etc. */
+private fun shareDeal(context: Context, deal: Deal, isExpired: Boolean) {
+    val store = StorePlatform.fromId(deal.platform)?.label ?: deal.platform
+    val url = deal.storeUrl ?: deal.productUrl
+    val text = when {
+        // Ya no está rebajado: el precio guardado sería engañoso.
+        isExpired -> "Mira ${deal.title} en $store: $url"
+        // 100 %: "Gratis" (Epic) o "US$0.00" (PlayStation); "a US$0.00" se leería raro.
+        deal.discountPercent >= 100 -> "¡Mira esta oferta! ${deal.title} está gratis en $store: $url"
+        else -> "¡Mira esta oferta! ${deal.title} a ${deal.discountedPriceText} (-${deal.discountPercent}%) en $store: $url"
+    }
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, deal.title)
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(Intent.createChooser(send, "Compartir oferta"))
 }
 
 @Preview(showBackground = true, widthDp = 200)
