@@ -37,11 +37,15 @@ class AuthRepository(
 ) {
     val currentUser: FirebaseUser? get() = auth.currentUser
 
-    /** Emite el usuario cada vez que cambia la sesión (anónima, vinculada o cerrada). */
+    /**
+     * Emite el usuario cada vez que cambia la sesión. IdTokenListener y no AuthStateListener: este
+     * último no avisa al vincular Google (el uid no cambia), y la UI necesita enterarse.
+     * Ojo: FirebaseUser es mutable; quien lo exponga a la UI debe copiar sus datos.
+     */
     val authState: Flow<FirebaseUser?> = callbackFlow {
-        val listener = FirebaseAuth.AuthStateListener { trySend(it.currentUser) }
-        auth.addAuthStateListener(listener)
-        awaitClose { auth.removeAuthStateListener(listener) }
+        val listener = FirebaseAuth.IdTokenListener { trySend(it.currentUser) }
+        auth.addIdTokenListener(listener)
+        awaitClose { auth.removeIdTokenListener(listener) }
     }
 
     /**

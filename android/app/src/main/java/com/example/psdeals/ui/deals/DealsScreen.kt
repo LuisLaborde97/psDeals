@@ -47,16 +47,20 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -90,11 +94,17 @@ import coil3.compose.AsyncImage
 import com.example.psdeals.R
 import com.example.psdeals.model.Deal
 import com.example.psdeals.model.StorePlatform
+import com.example.psdeals.ui.account.AccountButton
+import com.example.psdeals.ui.account.AccountDialog
+import com.example.psdeals.ui.account.AccountViewModel
+import com.example.psdeals.ui.account.rememberGoogleSignIn
 import com.example.psdeals.ui.theme.PSDealsTheme
 
 /** Rojo sobrio, llamativo sin ser chillón. Blanco encima = 4.97:1 (cumple WCAG AA para texto normal). */
 private val DiscountBadgeColor = Color(0xFFD62839)
 private const val SUPER_DEAL_THRESHOLD = 70
+/** Rosa coral: distinto del rojo del descuento para que el corazón no se confunda con la insignia. */
+private val WishlistColor = Color(0xFFFF5C7A)
 
 // Modo oscuro: grafito con un leve tinte azul arriba → negro casi puro abajo. Neutro para no competir con las portadas.
 private val DarkGradient = listOf(Color(0xFF1C1C24), Color(0xFF121216), Color(0xFF09090B))
@@ -110,16 +120,35 @@ private fun rememberBackgroundBrush(): Brush {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.Factory)) {
+fun DealsScreen(
+    viewModel: DealsViewModel = viewModel(factory = DealsViewModel.Factory),
+    accountViewModel: AccountViewModel = viewModel(factory = AccountViewModel.Factory),
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val genres by viewModel.availableGenres.collectAsStateWithLifecycle()
     val selectedGenre by viewModel.selectedGenre.collectAsStateWithLifecycle()
     val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+    val account by accountViewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showCurrencyInfo by remember { mutableStateOf(false) }
+    var showAccount by remember { mutableStateOf(false) }
+
+    LaunchedEffect(accountViewModel) {
+        accountViewModel.messages.collect { snackbarHostState.showSnackbar(it) }
+    }
+    val onAccountClick = rememberGoogleSignIn(
+        isSignedInWithGoogle = account.isSignedInWithGoogle,
+        onIdToken = accountViewModel::signInWithGoogle,
+        onError = accountViewModel::showMessage,
+        onShowAccount = { showAccount = true },
+    )
 
     if (showCurrencyInfo) CurrencyInfoDialog(onDismiss = { showCurrencyInfo = false })
+    if (showAccount && account.isSignedInWithGoogle) {
+        AccountDialog(account = account, onSignOut = accountViewModel::signOut, onDismiss = { showAccount = false })
+    }
 
     // El degradado ocupa toda la pantalla (también detrás de la barra de estado, por edge-to-edge);
     // Scaffold y TopAppBar son transparentes para dejarlo ver.
@@ -132,6 +161,7 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
         // Obligatorio con fondo transparente: contentColorFor(Transparent) no encuentra pareja en el tema y
         // cae al LocalContentColor por defecto (negro), dejando el texto heredado ilegible en modo oscuro.
         contentColor = MaterialTheme.colorScheme.onBackground,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -163,6 +193,7 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                     }
                 },
                 actions = {
+                    AccountButton(account = account, onClick = onAccountClick)
                     IconButton(onClick = { showCurrencyInfo = true }) {
                         Icon(painterResource(R.drawable.ic_info), contentDescription = "Sobre los precios y monedas")
                     }
@@ -209,7 +240,12 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                             // LazyGridState al tocar el chip no basta: la lista llega después y la grilla
                             // conservaría a la vista el primer elemento anterior si existe en la lista nueva.
                             key(state.platform) {
-                                DealsGrid(deals = state.deals, bottomInset = bottomInset)
+                                DealsGrid(
+                                    deals = state.deals,
+                                    wishlist = account.wishlist,
+                                    onToggleWishlist = accountViewModel::toggleWishlist,
+                                    bottomInset = bottomInset,
+                                )
                             }
                         state is DealsUiState.Success && state.isFiltered -> ScrollableCentered {
                             NoMatchesContent(onClearFilters = viewModel::clearFilters)
@@ -347,7 +383,12 @@ private fun SelectableChip(
 }
 
 @Composable
-private fun DealsGrid(deals: List<Deal>, bottomInset: Dp) {
+private fun DealsGrid(
+    deals: List<Deal>,
+    wishlist: Set<String>,
+    onToggleWishlist: (String) -> Unit,
+    bottomInset: Dp,
+) {
     val context = LocalContext.current
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -362,13 +403,25 @@ private fun DealsGrid(deals: List<Deal>, bottomInset: Dp) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(deals, key = { it.id }) { deal ->
-            DealCard(deal = deal, onClick = { openProduct(context, deal.storeUrl ?: deal.productUrl) })
+            DealCard(
+                deal = deal,
+                onClick = { openProduct(context, deal.storeUrl ?: deal.productUrl) },
+                isWishlisted = deal.id in wishlist,
+                onToggleWishlist = { onToggleWishlist(deal.id) },
+            )
         }
     }
 }
 
+/** @param onToggleWishlist null oculta el corazón (ej. en la vista previa). */
 @Composable
-fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun DealCard(
+    deal: Deal,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isWishlisted: Boolean = false,
+    onToggleWishlist: (() -> Unit)? = null,
+) {
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -401,6 +454,13 @@ fun DealCard(deal: Deal, onClick: () -> Unit, modifier: Modifier = Modifier) {
                     .align(Alignment.TopStart)
                     .padding(8.dp),
             )
+            if (onToggleWishlist != null) {
+                WishlistButton(
+                    isWishlisted = isWishlisted,
+                    onToggle = onToggleWishlist,
+                    modifier = Modifier.align(Alignment.TopEnd),
+                )
+            }
         }
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
@@ -491,6 +551,29 @@ private val StorePlatform.iconRes: Int
         StorePlatform.EPIC -> R.drawable.ic_epic
         StorePlatform.XBOX -> R.drawable.ic_xbox
     }
+
+/**
+ * Corazón sobre la portada, con un círculo oscuro detrás para que se lea sobre cualquier imagen.
+ * IconToggleButton (y no IconButton) para que TalkBack anuncie el estado: "Lista de deseos, activado".
+ */
+@Composable
+private fun WishlistButton(isWishlisted: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    IconToggleButton(checked = isWishlisted, onCheckedChange = { onToggle() }, modifier = modifier) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(32.dp)
+                .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+        ) {
+            Icon(
+                painter = painterResource(if (isWishlisted) R.drawable.ic_favorite else R.drawable.ic_favorite_border),
+                contentDescription = "Lista de deseos",
+                tint = if (isWishlisted) WishlistColor else Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
 
 /** Fuego con efecto de "latido" para las super ofertas. */
 @Composable
