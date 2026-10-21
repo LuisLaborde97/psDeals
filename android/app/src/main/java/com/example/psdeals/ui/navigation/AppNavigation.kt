@@ -48,9 +48,14 @@ private enum class Tab(val route: String, val label: String, @DrawableRes val ic
 /**
  * @param openWishlistRequest se tocó una alerta de wishlist: se cambia a Favoritos y se avisa con
  *   [onOpenWishlistHandled] para que el pedido no se repita en la siguiente recomposición.
+ * @param onDealsReady las ofertas terminaron de cargar (ver MainActivity: retiene la splash hasta entonces).
  */
 @Composable
-fun AppNavigation(openWishlistRequest: Boolean = false, onOpenWishlistHandled: () -> Unit = {}) {
+fun AppNavigation(
+    openWishlistRequest: Boolean = false,
+    onOpenWishlistHandled: () -> Unit = {},
+    onDealsReady: () -> Unit = {},
+) {
     val navController = rememberNavController()
     LaunchedEffect(openWishlistRequest) {
         if (openWishlistRequest) {
@@ -101,7 +106,7 @@ fun AppNavigation(openWishlistRequest: Boolean = false, onOpenWishlistHandled: (
                 .padding(padding)
                 .consumeWindowInsets(padding),
         ) {
-            composable(Routes.DEALS) { DealsScreen(accountViewModel = accountViewModel) }
+            composable(Routes.DEALS) { DealsScreen(accountViewModel = accountViewModel, onContentReady = onDealsReady) }
             composable(Routes.WISHLIST) {
                 WishlistScreen(
                     accountViewModel = accountViewModel,

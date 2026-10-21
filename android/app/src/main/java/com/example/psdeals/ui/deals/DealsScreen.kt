@@ -138,8 +138,12 @@ fun rememberBackgroundBrush(): Brush {
 fun DealsScreen(
     viewModel: DealsViewModel = viewModel(factory = DealsViewModel.Factory),
     accountViewModel: AccountViewModel = viewModel(factory = AccountViewModel.Factory),
+    onContentReady: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Error también cuenta: retener la splash no lo arreglaría, y la pantalla de error ofrece reintentar.
+    val isReady = uiState !is DealsUiState.Loading
+    LaunchedEffect(isReady) { if (isReady) onContentReady() }
     val genres by viewModel.availableGenres.collectAsStateWithLifecycle()
     val selectedGenre by viewModel.selectedGenre.collectAsStateWithLifecycle()
     val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()

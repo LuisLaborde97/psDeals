@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,9 +32,25 @@ class MainActivity : ComponentActivity() {
     /** Pedido de abrir la pestaña Favoritos (alerta de wishlist); AppNavigation lo atiende y lo apaga. */
     private var openWishlistRequest by mutableStateOf(false)
 
+    /**
+     * Las ofertas ya llegaron (o falló la carga): la splash puede irse. Lo marca DealsScreen; el
+     * ViewModel vive dentro de NavHost y la Activity no lo ve. Volatile: se escribe desde la composición
+     * y se lee en el pre-draw de cada cuadro.
+     */
+    @Volatile
+    private var contentReady = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Antes de super.onCreate(): cambia del tema de arranque (Theme.PSDeals.Starting) al de la app.
-        installSplashScreen()
+        val splash = installSplashScreen()
+        // Solo en un arranque real. Al recrearse (rotación) la splash no se muestra, pero la condición sí
+        // bloquearía el dibujo: estando en Favoritos, DealsScreen no avisaría y la app se congelaría hasta el timeout.
+        if (savedInstanceState == null) {
+            val start = SystemClock.uptimeMillis()
+            // Se evalúa en cada cuadro mientras la splash está visible: solo lecturas baratas.
+            // El tope garantiza que sin conexión (o con Firestore lento) la app se muestre de todos modos.
+            splash.setKeepOnScreenCondition { !contentReady && SystemClock.uptimeMillis() - start < SPLASH_TIMEOUT_MS }
+        }
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         // Solo en el primer arranque de la Activity, no en cada rotación: al recrearse (rotación, cambio de
@@ -48,6 +65,7 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(
                     openWishlistRequest = openWishlistRequest,
                     onOpenWishlistHandled = { openWishlistRequest = false },
+                    onDealsReady = { contentReady = true },
                 )
             }
         }
@@ -81,5 +99,10 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "MainActivity"
+        /**
+         * Más que esto, una splash fija parece un cuelgue: mejor mostrar la app con su indicador de carga.
+         * Medido en un POCO X8 Pro: en frío, Firestore entrega las ofertas a ~2,2 s del arranque.
+         */
+        const val SPLASH_TIMEOUT_MS = 2_500L
     }
 }
