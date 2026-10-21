@@ -1,14 +1,19 @@
 package com.example.psdeals.data
 
+import android.util.Log
 import com.example.psdeals.model.UserProfile
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
 /** Copia inmutable de lo que la UI necesita de FirebaseUser (que es mutable y no sirve para comparar estados). */
 data class SessionUser(
@@ -28,8 +33,13 @@ class UserSession(
     @Volatile
     private var profileReady = false
 
-    val sessionUser: Flow<SessionUser?> = auth.authState
-        .map { it?.toSessionUser() }
+    /**
+     * Fuerza a releer el usuario: reload() y updateProfile() cambian FirebaseUser sin renovar el token,
+     * así que el IdTokenListener no se entera y la UI seguiría mostrando la foto anterior.
+     */
+    private val profileRefreshes = MutableStateFlow(0)
+
+    val sessionUser: Flow<SessionUser?> = combine(auth.authState, profileRefreshes) { user, _ -> user?.toSessionUser() }
         .distinctUntilChanged()
 
     /** Perfil del usuario actual en tiempo real; cambia de documento si cambia el uid. */
@@ -47,6 +57,8 @@ class UserSession(
         val user = auth.ensureSignedIn()
         profiles.ensureProfile(user)
         profileReady = true
+        // Al abrir la app también: el usuario pudo cambiar su foto de Google desde la última vez.
+        if (!user.isAnonymous) refreshGoogleProfile()
         return user
     }
 
@@ -65,7 +77,15 @@ class UserSession(
         if (result is GoogleSignInResult.SwitchedToExistingAccount && anonymousProfile != null) {
             profiles.mergeInto(anonymousProfile, result.user.uid)
         }
+        refreshGoogleProfile()
         return result.user
+    }
+
+    /** Foto y nombre más recientes de Google; si falla (sin red), se queda con lo que había. */
+    private suspend fun refreshGoogleProfile() {
+        runCatching { auth.refreshProfileFromGoogle() }
+            .onFailure { Log.w(TAG, "No se pudo refrescar el perfil de Google", it) }
+        profileRefreshes.update { it + 1 }
     }
 
     suspend fun setWishlisted(dealId: String, wishlisted: Boolean) {
@@ -81,11 +101,19 @@ class UserSession(
         return start()
     }
 
-    private fun FirebaseUser.toSessionUser() = SessionUser(
-        uid = uid,
-        isAnonymous = isAnonymous,
-        displayName = displayName,
-        email = email,
-        photoUrl = photoUrl?.toString(),
-    )
+    private fun FirebaseUser.toSessionUser(): SessionUser {
+        // providerData de Google se actualiza en cada inicio de sesión; los campos de FirebaseUser no.
+        val google = providerData.firstOrNull { it.providerId == GoogleAuthProvider.PROVIDER_ID }
+        return SessionUser(
+            uid = uid,
+            isAnonymous = isAnonymous,
+            displayName = displayName?.takeIf { it.isNotBlank() } ?: google?.displayName,
+            email = email ?: google?.email,
+            photoUrl = (google?.photoUrl ?: photoUrl)?.toString(),
+        )
+    }
+
+    private companion object {
+        const val TAG = "UserSession"
+    }
 }

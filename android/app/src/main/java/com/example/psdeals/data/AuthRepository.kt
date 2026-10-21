@@ -5,6 +5,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -77,6 +78,25 @@ class AuthRepository(
                 ?: error("signInWithCredential terminó sin usuario")
             GoogleSignInResult.SwitchedToExistingAccount(existing, abandonedAnonymousUid = user.uid)
         }
+    }
+
+    /**
+     * Trae del servidor los datos más recientes del usuario y sincroniza nombre y foto con los de Google.
+     * Firebase solo copia displayName/photoUrl del proveedor la primera vez que se vincula: si la foto se
+     * añadió o cambió después, el usuario la conserva vacía o vieja, aunque providerData sí tenga la nueva.
+     */
+    suspend fun refreshProfileFromGoogle(): FirebaseUser? {
+        val user = auth.currentUser ?: return null
+        user.reload().await()
+        val google = user.providerData.firstOrNull { it.providerId == GoogleAuthProvider.PROVIDER_ID } ?: return user
+        if (google.photoUrl != user.photoUrl || (user.displayName.isNullOrBlank() && !google.displayName.isNullOrBlank())) {
+            val update = UserProfileChangeRequest.Builder()
+                .setPhotoUri(google.photoUrl)
+                .apply { if (user.displayName.isNullOrBlank()) setDisplayName(google.displayName) }
+                .build()
+            user.updateProfile(update).await()
+        }
+        return user
     }
 
     /** Cierra la sesión; el siguiente ensureSignedIn() creará un usuario anónimo nuevo. */
