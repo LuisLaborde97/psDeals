@@ -40,12 +40,15 @@ sealed interface DealsUiState {
      * @param isFiltered hay búsqueda o género activos (distingue "sin ofertas" de "sin coincidencias").
      * @param platform tienda de la que salen [deals] (null = todas). Viaja con los datos y no aparte
      *   para que la UI sepa exactamente cuándo llegó la lista de la tienda nueva.
+     * @param isSearching hay texto en el buscador; igual que [platform], marca cuándo llega la lista
+     *   sin filtrar al vaciarlo.
      */
     data class Success(
         val deals: List<Deal>,
         val totalCount: Int,
         val isFiltered: Boolean,
         val platform: StorePlatform?,
+        val isSearching: Boolean,
     ) : DealsUiState
     data class Error(val message: String) : DealsUiState
 }
@@ -140,6 +143,7 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
                     totalCount = source.deals.size,
                     isFiltered = genre != null || needle.isNotEmpty(),
                     platform = source.platform,
+                    isSearching = needle.isNotEmpty(),
                 )
             }
         }

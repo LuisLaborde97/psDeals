@@ -280,10 +280,12 @@ fun DealsScreen(
                             ErrorContent(message = state.message, onRetry = viewModel::refreshDeals)
                         }
                         state is DealsUiState.Success && state.deals.isNotEmpty() ->
-                            // Grilla nueva (y su scroll en 0) cuando llega la lista de otra tienda. Reiniciar el
-                            // LazyGridState al tocar el chip no basta: la lista llega después y la grilla
-                            // conservaría a la vista el primer elemento anterior si existe en la lista nueva.
-                            key(state.platform) {
+                            // Grilla nueva (y su scroll en 0) cuando llega la lista de otra tienda, o al empezar o
+                            // vaciar una búsqueda. Reiniciar el LazyGridState al tocar no basta: la lista llega
+                            // después y la grilla conservaría a la vista el primer elemento anterior si existe en
+                            // la lista nueva. Mientras se escribe (texto → texto) la clave no cambia: la grilla no
+                            // se recrea en cada tecla.
+                            key(state.platform, state.isSearching) {
                                 DealsGrid(
                                     deals = state.deals,
                                     wishlist = account.wishlist,
