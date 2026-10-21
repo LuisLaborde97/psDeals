@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -58,7 +59,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -114,6 +117,9 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
     val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+    var showCurrencyInfo by remember { mutableStateOf(false) }
+
+    if (showCurrencyInfo) CurrencyInfoDialog(onDismiss = { showCurrencyInfo = false })
 
     // El degradado ocupa toda la pantalla (también detrás de la barra de estado, por edge-to-edge);
     // Scaffold y TopAppBar son transparentes para dejarlo ver.
@@ -154,6 +160,11 @@ fun DealsScreen(viewModel: DealsViewModel = viewModel(factory = DealsViewModel.F
                                 )
                             }
                         }
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showCurrencyInfo = true }) {
+                        Icon(painterResource(R.drawable.ic_info), contentDescription = "Sobre los precios y monedas")
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -458,6 +469,38 @@ private fun PulsingFire() {
             scaleX = scale
             scaleY = scale
         },
+    )
+}
+
+/**
+ * Explica por qué conviven US$ y COP en la lista. Opaco (no cristal como las tarjetas): sobre la
+ * grilla de portadas un diálogo translúcido sería ilegible.
+ */
+@Composable
+private fun CurrencyInfoDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(painterResource(R.drawable.ic_info), contentDescription = null) },
+        title = { Text("Sobre los precios y monedas", textAlign = TextAlign.Center) },
+        text = {
+            Text(
+                // Epic: las rebajas vienen de IsThereAnyDeal, que para Colombia solo da el precio de EE. UU. en USD.
+                "Cada tienda publica sus precios para Colombia en una moneda distinta, y los mostramos tal cual:\n\n" +
+                    "• PlayStation cobra en dólares (US$).\n" +
+                    "• Steam y Xbox cobran en pesos colombianos (COP).\n" +
+                    "• Epic Games: los juegos gratis se muestran en pesos. En las rebajas mostramos como referencia " +
+                    "el precio en dólares de la tienda de EE. UU.; lo que Epic te cobre en pesos puede ser distinto.\n\n" +
+                    "PSDeals es un agregador gratuito y no aplica ninguna comisión. Si pagas en dólares, el cargo " +
+                    "final dependerá de la tasa de cambio de tu banco.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Entendido") } },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        iconContentColor = MaterialTheme.colorScheme.primary,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
