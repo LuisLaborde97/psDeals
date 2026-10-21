@@ -1,6 +1,7 @@
 package com.example.psdeals.notifications
 
 import android.util.Log
+import com.example.psdeals.PSDealsApp
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -21,18 +22,26 @@ class DealsMessagingService : FirebaseMessagingService() {
         }
     }
 
-    /** Ruta nueva de firebase-messaging 26+ (acción FCM_REGISTERED). */
-    override fun onRegistered(token: String) {
-        // No se registra el token en el log: identifica al dispositivo.
-        Log.d(TAG, "Registro FCM actualizado; re-suscribiendo al topic")
+    /**
+     * Modelo de envío por Firebase Installation ID (firebase-messaging 26+, opt-in con
+     * `firebase_messaging_installation_id_enabled`). No está activado, así que no se llama; si algún día
+     * se activa, recibe un FID y no un token: por eso solo repara el topic y no toca fcmTokens.
+     */
+    override fun onRegistered(installationId: String) {
+        Log.d(TAG, "Registro FCM (FID) actualizado; re-suscribiendo al topic")
         DealsNotifications.subscribeToTopic()
     }
 
-    /** Ruta antigua (acción NEW_TOKEN), obsoleta pero aún despachada por el SDK; la suscripción es idempotente. */
-    @Deprecated("Reemplazado por onRegistered en firebase-messaging 26")
+    /**
+     * Token nuevo (instalación, restauración o rotación). Marcado obsoleto junto con getToken(), pero es la
+     * ruta del modelo por token, que es el que usa el backend.
+     */
+    @Deprecated("Ruta del modelo por token; ver onRegistered")
     override fun onNewToken(token: String) {
-        Log.d(TAG, "Token FCM renovado; re-suscribiendo al topic")
+        // No se registra el token en el log: identifica al dispositivo.
+        Log.d(TAG, "Token FCM renovado; re-suscribiendo al topic y actualizando el perfil")
         DealsNotifications.subscribeToTopic()
+        (application as PSDealsApp).onNewPushToken(token)
     }
 
     private companion object {

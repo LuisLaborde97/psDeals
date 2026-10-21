@@ -32,6 +32,7 @@ class UserProfileRepository(
                         FIELD_IS_ANONYMOUS to user.isAnonymous,
                         FIELD_WISHLIST to emptyList<String>(),
                         FIELD_SEARCH_HISTORY to emptyList<String>(),
+                        FIELD_FCM_TOKENS to emptyList<String>(),
                         FIELD_CREATED_AT to FieldValue.serverTimestamp(),
                         FIELD_UPDATED_AT to FieldValue.serverTimestamp(),
                     ),
@@ -78,6 +79,15 @@ class UserProfileRepository(
         }.await()
     }
 
+    // arrayUnion/arrayRemove: sin duplicados y sin pisar los tokens de los otros dispositivos de la cuenta.
+    suspend fun addFcmToken(uid: String, token: String) {
+        doc(uid).update(FIELD_FCM_TOKENS, FieldValue.arrayUnion(token), FIELD_UPDATED_AT, FieldValue.serverTimestamp()).await()
+    }
+
+    suspend fun removeFcmToken(uid: String, token: String) {
+        doc(uid).update(FIELD_FCM_TOKENS, FieldValue.arrayRemove(token), FIELD_UPDATED_AT, FieldValue.serverTimestamp()).await()
+    }
+
     /** Borra un término del historial; arrayRemove compara exacto, y recordSearch guarda el texto tal cual. */
     suspend fun removeSearch(uid: String, query: String) {
         doc(uid).update(FIELD_SEARCH_HISTORY, FieldValue.arrayRemove(query), FIELD_UPDATED_AT, FieldValue.serverTimestamp()).await()
@@ -111,6 +121,7 @@ class UserProfileRepository(
             isAnonymous = getBoolean(FIELD_IS_ANONYMOUS) ?: true,
             wishlist = stringList(FIELD_WISHLIST),
             searchHistory = stringList(FIELD_SEARCH_HISTORY),
+            fcmTokens = stringList(FIELD_FCM_TOKENS),
             createdAt = getTimestamp(FIELD_CREATED_AT)?.toDate()?.time,
             updatedAt = getTimestamp(FIELD_UPDATED_AT)?.toDate()?.time,
         ).also { if (getString(FIELD_UID) != id) Log.w(TAG, "Perfil $id con campo uid inconsistente") }
@@ -127,6 +138,7 @@ class UserProfileRepository(
         private const val FIELD_IS_ANONYMOUS = "isAnonymous"
         private const val FIELD_WISHLIST = "wishlist"
         private const val FIELD_SEARCH_HISTORY = "searchHistory"
+        private const val FIELD_FCM_TOKENS = "fcmTokens"
         private const val FIELD_CREATED_AT = "createdAt"
         private const val FIELD_UPDATED_AT = "updatedAt"
     }

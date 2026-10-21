@@ -22,7 +22,9 @@ service cloud.firestore {
         return data.uid == uid
           && data.isAnonymous is bool
           && data.wishlist is list && data.wishlist.size() <= 1000
-          && data.searchHistory is list && data.searchHistory.size() <= 20;
+          && data.searchHistory is list && data.searchHistory.size() <= 20
+          // Un token por dispositivo; opcional porque los perfiles anteriores a FCM no lo tienen.
+          && (!('fcmTokens' in data) || (data.fcmTokens is list && data.fcmTokens.size() <= 20));
       }
 
       allow read, delete: if isOwner();
