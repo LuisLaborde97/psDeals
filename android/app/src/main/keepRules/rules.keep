@@ -10,3 +10,8 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+# Kotlin compila las funciones de un paquete repartidas en varios archivos (ej. kotlin.text.StringsKt) como una
+# cadena de clases StringsKt__XxxKt que heredan unas de otras y son package-private. R8 movía alguna a otro
+# paquete al renombrarla y la app se cerraba al arrancar con IllegalAccessError ("Class kotlin.text.f extended
+# by class vx1 is inaccessible"). Conservar sus nombres impide moverlas; R8 aún puede optimizarlas y eliminarlas.
+-keepnames class kotlin.**Kt__*

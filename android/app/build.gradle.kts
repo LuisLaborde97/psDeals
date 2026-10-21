@@ -22,6 +22,10 @@ android {
 
     buildTypes {
         release {
+            // TEMPORAL, solo para pruebas de rendimiento: firma con la clave debug (~/.android/debug.keystore),
+            // así se instala encima del APK debug sin configurar una clave de producción. Antes de publicar en
+            // Play Store hay que reemplazarla por una clave de subida propia (y registrar su SHA-1 en Firebase).
+            signingConfig = signingConfigs.getByName("debug")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
