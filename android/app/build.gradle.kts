@@ -48,6 +48,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.navigation.compose)
     // Firebase arrastra fragment 1.1.0; la Activity Result API (permiso de notificaciones) exige >= 1.3.0.
     implementation(libs.androidx.fragment)
     implementation(platform(libs.firebase.bom))

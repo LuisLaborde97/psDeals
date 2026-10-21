@@ -94,6 +94,12 @@ class UserSession(
         if (wishlisted) profiles.addToWishlist(uid, dealId) else profiles.removeFromWishlist(uid, dealId)
     }
 
+    /** Guarda el término en searchHistory (sin duplicados, últimas UserProfileRepository.MAX_SEARCH_HISTORY). */
+    suspend fun recordSearch(query: String) {
+        val uid = if (profileReady) auth.currentUser?.uid ?: start().uid else start().uid
+        profiles.recordSearch(uid, query)
+    }
+
     /** Vuelve a un usuario anónimo nuevo (con perfil vacío). */
     suspend fun signOut(): FirebaseUser {
         profileReady = false

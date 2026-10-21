@@ -10,7 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import com.example.psdeals.ui.deals.DealsScreen
+import com.example.psdeals.ui.navigation.AppNavigation
 import com.example.psdeals.ui.theme.PSDealsTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) askNotificationPermissionIfNeeded()
         setContent {
             PSDealsTheme {
-                DealsScreen()
+                AppNavigation()
             }
         }
     }

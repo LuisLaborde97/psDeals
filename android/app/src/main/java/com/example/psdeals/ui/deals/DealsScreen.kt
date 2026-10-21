@@ -65,6 +65,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,10 +100,15 @@ import com.example.psdeals.ui.account.AccountDialog
 import com.example.psdeals.ui.account.AccountViewModel
 import com.example.psdeals.ui.account.rememberGoogleSignIn
 import com.example.psdeals.ui.theme.PSDealsTheme
+import kotlinx.coroutines.delay
 
 /** Rojo sobrio, llamativo sin ser chillón. Blanco encima = 4.97:1 (cumple WCAG AA para texto normal). */
 private val DiscountBadgeColor = Color(0xFFD62839)
 private const val SUPER_DEAL_THRESHOLD = 70
+private const val EXPIRED_ALPHA = 0.55f
+/** Mínimo para guardar una búsqueda: con 1-2 letras casi siempre es una búsqueda a medio escribir. */
+private const val MIN_SEARCH_LENGTH = 3
+private const val SEARCH_RECORD_DELAY_MS = 1_500L
 /** Rosa coral: distinto del rojo del descuento para que el corazón no se confunda con la insignia. */
 private val WishlistColor = Color(0xFFFF5C7A)
 
@@ -113,7 +119,7 @@ private val LightGradient = listOf(Color(0xFFE8F0FF), Color(0xFFF4F1F8), Color(0
 
 /** Elige el degradado según el tema activo (incluye colores dinámicos), no solo según el sistema. */
 @Composable
-private fun rememberBackgroundBrush(): Brush {
+fun rememberBackgroundBrush(): Brush {
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return remember(isDark) { Brush.verticalGradient(if (isDark) DarkGradient else LightGradient) }
 }
@@ -150,12 +156,27 @@ fun DealsScreen(
         AccountDialog(account = account, onSignOut = accountViewModel::signOut, onDismiss = { showAccount = false })
     }
 
-    // El degradado ocupa toda la pantalla (también detrás de la barra de estado, por edge-to-edge);
+    // Búsqueda reciente: se guarda cuando el usuario deja de escribir 1,5 s (o pulsa "Buscar"), no en
+    // cada tecla, para no escribir en Firestore por cada letra. rememberSaveable evita volver a guardar
+    // el mismo término al regresar de otra pestaña.
+    var lastRecordedSearch by rememberSaveable { mutableStateOf("") }
+    val recordSearch = { query: String ->
+        val term = query.trim()
+        if (term.length >= MIN_SEARCH_LENGTH && !term.equals(lastRecordedSearch, ignoreCase = true)) {
+            lastRecordedSearch = term
+            accountViewModel.recordSearch(term)
+        }
+    }
+    LaunchedEffect(viewModel.searchQuery) {
+        delay(SEARCH_RECORD_DELAY_MS)
+        recordSearch(viewModel.searchQuery)
+    }
+
+    // El degradado lo pinta AppNavigation detrás de todo (también de la barra inferior);
     // Scaffold y TopAppBar son transparentes para dejarlo ver.
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(rememberBackgroundBrush())
             .nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = Color.Transparent,
         // Obligatorio con fondo transparente: contentColorFor(Transparent) no encuentra pareja en el tema y
@@ -208,7 +229,11 @@ fun DealsScreen(
                 .fillMaxSize()
                 .padding(top = innerPadding.calculateTopPadding()),
         ) {
-            SearchField(query = viewModel.searchQuery, onQueryChange = viewModel::onSearchQueryChange)
+            SearchField(
+                query = viewModel.searchQuery,
+                onQueryChange = viewModel::onSearchQueryChange,
+                onSearch = recordSearch,
+            )
             PlatformChips(
                 selectedPlatform = selectedPlatform,
                 onPlatformClick = { platform ->
@@ -262,7 +287,7 @@ fun DealsScreen(
 }
 
 @Composable
-private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
+private fun SearchField(query: String, onQueryChange: (String) -> Unit, onSearch: (String) -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
     OutlinedTextField(
         value = query,
@@ -292,7 +317,12 @@ private fun SearchField(query: String, onQueryChange: (String) -> Unit) {
             focusedLeadingIconColor = MaterialTheme.colorScheme.primary,
         ),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+        keyboardActions = KeyboardActions(
+            onSearch = {
+                keyboard?.hide()
+                onSearch(query)
+            },
+        ),
     )
 }
 
@@ -382,12 +412,14 @@ private fun SelectableChip(
     )
 }
 
+/** Compartida con WishlistScreen. @param isExpired marca ofertas terminadas (solo en la lista de deseos). */
 @Composable
-private fun DealsGrid(
+fun DealsGrid(
     deals: List<Deal>,
     wishlist: Set<String>,
     onToggleWishlist: (String) -> Unit,
     bottomInset: Dp,
+    isExpired: (Deal) -> Boolean = { false },
 ) {
     val context = LocalContext.current
     LazyVerticalGrid(
@@ -408,12 +440,16 @@ private fun DealsGrid(
                 onClick = { openProduct(context, deal.storeUrl ?: deal.productUrl) },
                 isWishlisted = deal.id in wishlist,
                 onToggleWishlist = { onToggleWishlist(deal.id) },
+                isExpired = isExpired(deal),
             )
         }
     }
 }
 
-/** @param onToggleWishlist null oculta el corazón (ej. en la vista previa). */
+/**
+ * @param onToggleWishlist null oculta el corazón (ej. en la vista previa).
+ * @param isExpired la rebaja terminó (el scraper dejó de verla): tarjeta atenuada y precios como referencia.
+ */
 @Composable
 fun DealCard(
     deal: Deal,
@@ -421,11 +457,14 @@ fun DealCard(
     modifier: Modifier = Modifier,
     isWishlisted: Boolean = false,
     onToggleWishlist: (() -> Unit)? = null,
+    isExpired: Boolean = false,
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            // Atenúa la tarjeta entera, corazón incluido (sigue siendo tocable: alpha no afecta a los toques).
+            .graphicsLayer { alpha = if (isExpired) EXPIRED_ALPHA else 1f },
         shape = RoundedCornerShape(16.dp),
         // Cristal: translúcida para que el degradado se asome; sin elevación, así la sombra no se ve a través.
         // contentColor explícito por la misma razón que en el Scaffold: un color con alpha no tiene pareja en el tema.
@@ -448,12 +487,10 @@ fun DealCard(
                     .fillMaxWidth()
                     .height(180.dp),
             )
-            DiscountBadge(
-                percent = deal.discountPercent,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp),
-            )
+            val badgeModifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp)
+            if (isExpired) ExpiredBadge(badgeModifier) else DiscountBadge(percent = deal.discountPercent, modifier = badgeModifier)
             if (onToggleWishlist != null) {
                 WishlistButton(
                     isWishlisted = isWishlisted,
@@ -573,6 +610,20 @@ private fun WishlistButton(isWishlisted: Boolean, onToggle: () -> Unit, modifier
             )
         }
     }
+}
+
+/** Sustituye al % de descuento cuando la rebaja ya terminó. */
+@Composable
+private fun ExpiredBadge(modifier: Modifier = Modifier) {
+    Text(
+        text = "Oferta terminada",
+        color = Color.White,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
 }
 
 /** Fuego con efecto de "latido" para las super ofertas. */

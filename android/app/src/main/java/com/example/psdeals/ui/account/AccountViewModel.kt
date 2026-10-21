@@ -68,6 +68,13 @@ class AccountViewModel(private val session: UserSession) : ViewModel() {
         }
     }
 
+    /** Silencioso: si falla (sin conexión), perder una entrada del historial no merece interrumpir al usuario. */
+    fun recordSearch(query: String) {
+        viewModelScope.launch {
+            runCatching { session.recordSearch(query) }.onFailure { Log.w(TAG, "Fallo al guardar la búsqueda", it) }
+        }
+    }
+
     fun signOut() {
         viewModelScope.launch {
             runCatching { session.signOut() }
