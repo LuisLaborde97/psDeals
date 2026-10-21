@@ -1,4 +1,4 @@
-name: Daily PS Store Scraper
+name: Daily Deals Scraper
 
 on:
   schedule:
