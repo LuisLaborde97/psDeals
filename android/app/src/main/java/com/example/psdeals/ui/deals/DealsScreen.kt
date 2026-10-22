@@ -147,7 +147,7 @@ fun DealsScreen(
     val isReady = uiState !is DealsUiState.Loading
     LaunchedEffect(isReady) { if (isReady) onContentReady() }
     val genres by viewModel.availableGenres.collectAsStateWithLifecycle()
-    val selectedGenre by viewModel.selectedGenre.collectAsStateWithLifecycle()
+    val selectedGenres by viewModel.selectedGenres.collectAsStateWithLifecycle()
     val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val account by accountViewModel.uiState.collectAsStateWithLifecycle()
@@ -266,7 +266,7 @@ fun DealsScreen(
                 },
             )
             if (genres.isNotEmpty()) {
-                GenreChips(genres = genres, selectedGenre = selectedGenre, onGenreClick = viewModel::onGenreClick)
+                GenreChips(genres = genres, selectedGenres = selectedGenres, onGenreClick = viewModel::onGenreClick)
             }
 
             when (val state = uiState) {
@@ -465,14 +465,14 @@ private fun PlatformChips(selectedPlatform: StorePlatform?, onPlatformClick: (St
 }
 
 @Composable
-private fun GenreChips(genres: List<String>, selectedGenre: String?, onGenreClick: (String) -> Unit) {
+private fun GenreChips(genres: List<String>, selectedGenres: Set<String>, onGenreClick: (String) -> Unit) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(genres, key = { it }) { genre ->
-            SelectableChip(label = genre, selected = genre == selectedGenre, onClick = { onGenreClick(genre) })
+            SelectableChip(label = genre, selected = genre in selectedGenres, onClick = { onGenreClick(genre) })
         }
     }
 }

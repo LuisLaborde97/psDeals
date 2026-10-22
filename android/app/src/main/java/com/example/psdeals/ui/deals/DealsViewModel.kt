@@ -72,8 +72,9 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     var searchQuery by mutableStateOf("")
         private set
 
-    private val _selectedGenre = MutableStateFlow<String?>(null)
-    val selectedGenre: StateFlow<String?> = _selectedGenre.asStateFlow()
+    /** Géneros elegidos (selección múltiple); vacío = sin filtro de género. */
+    private val _selectedGenres = MutableStateFlow<Set<String>>(emptySet())
+    val selectedGenres: StateFlow<Set<String>> = _selectedGenres.asStateFlow()
 
     /** Tienda elegida; null = "Todas". Funciona como pestaña: tocar la activa no la deselecciona. */
     private val _selectedPlatform = MutableStateFlow<StorePlatform?>(StorePlatform.PLAYSTATION)
@@ -124,24 +125,26 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     val uiState: StateFlow<DealsUiState> = combine(
         platformSource,
         snapshotFlow { searchQuery },
-        _selectedGenre,
+        _selectedGenres,
         availableGenres,
     ) { source, query, selected, genres ->
         when (source) {
             DealsSource.Loading -> DealsUiState.Loading
             is DealsSource.Failed -> DealsUiState.Error(source.message)
             is DealsSource.Loaded -> {
-                // Si el género elegido ya no existe tras una actualización, se ignora en vez de dejar la lista vacía.
-                val genre = selected?.takeIf { it in genres }
+                // Solo cuentan los elegidos que existen en la tienda actual: uno que desapareció tras una
+                // actualización (o al cambiar de tienda) se ignora en vez de dejar la lista vacía.
+                val activeGenres = selected.intersect(genres.toSet())
                 val needle = query.trim().normalizedForSearch()
                 val filtered = source.deals.filter { deal ->
-                    (genre == null || genre in deal.genres) &&
+                    // OR: basta con que el juego tenga uno de los géneros elegidos.
+                    (activeGenres.isEmpty() || deal.genres.any { it in activeGenres }) &&
                         (needle.isEmpty() || deal.title.normalizedForSearch().contains(needle))
                 }
                 DealsUiState.Success(
                     deals = filtered,
                     totalCount = source.deals.size,
-                    isFiltered = genre != null || needle.isNotEmpty(),
+                    isFiltered = activeGenres.isNotEmpty() || needle.isNotEmpty(),
                     platform = source.platform,
                     isSearching = needle.isNotEmpty(),
                 )
@@ -155,18 +158,18 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
         searchQuery = query
     }
 
-    /** Tocar el chip seleccionado lo deselecciona. */
-    fun onGenreClick(genre: String) = _selectedGenre.update { if (it == genre) null else genre }
+    /** Alterna el género: si estaba elegido lo quita, si no lo agrega (los demás se mantienen). */
+    fun onGenreClick(genre: String) = _selectedGenres.update { if (genre in it) it - genre else it + genre }
 
     /** null = "Todas". */
     fun onPlatformClick(platform: StorePlatform?) {
         _selectedPlatform.value = platform
     }
 
-    /** No cambia la tienda: limpia búsqueda y género dentro de la tienda actual. */
+    /** No cambia la tienda: limpia búsqueda y géneros dentro de la tienda actual. */
     fun clearFilters() {
         searchQuery = ""
-        _selectedGenre.value = null
+        _selectedGenres.value = emptySet()
     }
 
     /**
