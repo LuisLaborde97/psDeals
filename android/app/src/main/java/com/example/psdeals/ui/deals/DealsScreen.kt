@@ -90,6 +90,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -216,7 +217,7 @@ fun DealsScreen(
                         )
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("PSDeals", fontWeight = FontWeight.Bold)
+                            Text(stringResource(id = R.string.app_name), fontWeight = FontWeight.Bold)
                             (uiState as? DealsUiState.Success)?.let {
                                 Text(
                                     if (it.isFiltered) "${it.deals.size} de ${it.totalCount} ofertas"
@@ -820,7 +821,8 @@ private fun CurrencyInfoDialog(onDismiss: () -> Unit) {
                     "• Steam y Xbox cobran en pesos colombianos (COP).\n" +
                     "• Epic Games: los juegos gratis se muestran en pesos. En las rebajas mostramos como referencia " +
                     "el precio en dólares de la tienda de EE. UU.; lo que Epic te cobre en pesos puede ser distinto.\n\n" +
-                    "PSDeals es un agregador gratuito y no aplica ninguna comisión. Si pagas en dólares, el cargo " +
+                    "${stringResource(id = R.string.app_name)} es un agregador gratuito y no aplica ninguna comisión. " +
+                    "Si pagas en dólares, el cargo " +
                     "final dependerá de la tasa de cambio de tu banco.",
                 style = MaterialTheme.typography.bodyMedium,
             )

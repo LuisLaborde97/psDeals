@@ -15,9 +15,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import com.example.psdeals.R
 import com.example.psdeals.model.AppUpdate
 import com.example.psdeals.ui.openStoreUrl
 
@@ -45,7 +47,7 @@ fun UpdateDialog(update: AppUpdate, onPostpone: () -> Unit) {
             Column(modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
                 if (update.isMandatory) {
                     Text(
-                        "Esta versión ya no es compatible. Actualiza para seguir usando PSDeals.",
+                        "Esta versión ya no es compatible. Actualiza para seguir usando ${stringResource(id = R.string.app_name)}.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )

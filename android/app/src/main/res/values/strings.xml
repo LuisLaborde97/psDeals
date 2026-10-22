@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">GoLab Deals</string>
     <string name="channel_daily_deals_name">Ofertas del día</string>
-    <string name="channel_daily_deals_description">Nuevas ofertas de la PS Store con 50% de descuento o más</string>
+    <string name="channel_daily_deals_description">Nuevas ofertas de juegos en todas las plataformas</string>
     <string name="channel_wishlist_alerts_name">Alertas de Lista de Deseos</string>
     <string name="channel_wishlist_alerts_description">Cuando un juego de tu lista de deseos baja de precio o vuelve a estar en oferta</string>
 </resources>
