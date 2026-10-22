@@ -1,6 +1,6 @@
 <div align="center">
   <!-- Reemplaza con la ruta de tu logo en el repositorio -->
-  <img src="app/src/main/res/drawable/logo.png" width="150" alt="GoLab Deals Logo">
+  <img src="app/src/main/res/drawable/logo.jpg" width="150" alt="GoLab Deals Logo">
   
   <h1>GoLab Deals</h1>
   <p>El rastreador definitivo de ofertas gamer multiplataforma para Android.</p>
