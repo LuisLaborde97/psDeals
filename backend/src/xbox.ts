@@ -9,8 +9,8 @@ import type { Deal, ScrapeResult } from './types.js';
 const BROWSE_URL = 'https://emerald.xboxservices.com/xboxcomfd/browse';
 const DEALS_CHANNEL = 'DynamicChannel.GameDeals';
 const STORE_URL = 'https://www.xbox.com';
-/** ~550 ofertas en CO; ordenadas por popularidad, las primeras son las que interesan. */
-const MAX_RESULTS = Number(process.env.XBOX_MAX_RESULTS ?? 200);
+/** ~1.100 ofertas en CO: el tope las cubre todas; el recorrido termina cuando no hay más páginas. */
+const MAX_RESULTS = Number(process.env.XBOX_MAX_RESULTS ?? 2000);
 const REQUEST_TIMEOUT_MS = 30_000;
 /** El CDN de imágenes de Microsoft redimensiona con `?w=`: ~100 KB en vez de ~225 KB por portada. */
 const IMAGE_WIDTH = 440;

@@ -11,7 +11,11 @@ const ITAD_API_URL = 'https://api.isthereanydeal.com';
 /** ID de la Epic Games Store en IsThereAnyDeal (GET /service/shops/v1). */
 const ITAD_EPIC_SHOP_ID = 16;
 /** Máximo que acepta /deals/v2 por petición; con sort=rank vienen primero los juegos más populares. */
-const MAX_RESULTS = Math.min(Number(process.env.EPIC_MAX_RESULTS ?? 200), 200);
+const MAX_RESULTS = Number(process.env.EPIC_MAX_RESULTS ?? 1000);
+/** Máximo que acepta /deals/v2 por petición: se pagina con offset hasta juntar [MAX_RESULTS] juegos. */
+const ITAD_PAGE_SIZE = 200;
+/** Tope de páginas por si hasMore no llegara nunca a false. */
+const ITAD_MAX_PAGES = 30;
 const FREE_GAMES_URL = 'https://store-site-backend-static-ipv4.ak.epicgames.com/freeGamesPromotions';
 const STORE_URL = 'https://store.epicgames.com';
 /** Epic no tiene es-CO; es-MX es su español latinoamericano. */
@@ -74,20 +78,37 @@ async function fetchItadDeals(region: string, cc: string): Promise<ScrapeResult>
   }
   // ITAD solo sigue los precios regionales de Epic en algunos países (BR, AR…); para CO, MX o CL
   // devuelve el precio de la tienda de EE. UU. en USD, no el COP que cobra Epic en Colombia.
-  const params = new URLSearchParams({
-    country: cc,
-    shops: String(ITAD_EPIC_SHOP_ID),
-    limit: String(MAX_RESULTS),
-    // Sin orden, ITAD devuelve casi solo juegos de relleno; rank = popularidad.
-    sort: 'rank',
-    mature: 'true', // sin esto ITAD omite los juegos para adultos, que PlayStation y Steam sí incluyen
-  });
-  const res = await withRetries('epic ITAD /deals/v2', () =>
-    fetchJson<{ list?: ItadDeal[] }>(`${ITAD_API_URL}/deals/v2?${params}`, { 'ITAD-API-Key': key }),
-  );
-  const list = res?.list ?? [];
+  // Por popularidad (rank) y de a 200: se recorren páginas hasta juntar MAX_RESULTS juegos o agotar la lista.
+  const list: ItadDeal[] = [];
+  let complete = true;
+  let offset = 0;
+  for (let page = 1; page <= ITAD_MAX_PAGES; page++) {
+    const params = new URLSearchParams({
+      country: cc,
+      shops: String(ITAD_EPIC_SHOP_ID),
+      limit: String(ITAD_PAGE_SIZE),
+      offset: String(offset),
+      // Sin orden, ITAD devuelve casi solo juegos de relleno; rank = popularidad.
+      sort: 'rank',
+      mature: 'true', // sin esto ITAD omite los juegos para adultos, que PlayStation y Steam sí incluyen
+    });
+    const res = await withRetries(`epic ITAD /deals/v2 offset=${offset}`, () =>
+      fetchJson<{ list?: ItadDeal[]; hasMore?: boolean; nextOffset?: number }>(`${ITAD_API_URL}/deals/v2?${params}`, {
+        'ITAD-API-Key': key,
+      }),
+    );
+    if (!res) {
+      complete = false; // agotó reintentos: faltan páginas
+      break;
+    }
+    list.push(...(res.list ?? []));
+    // La lista trae DLC y paquetes: cuenta solo juegos para el tope.
+    if (list.filter((d) => d.type === 'game').length >= MAX_RESULTS || !res.hasMore || res.nextOffset === undefined) break;
+    offset = res.nextOffset;
+  }
   const deals = list
     .filter((d) => d.type === 'game' && d.deal.cut > 0)
+    .slice(0, MAX_RESULTS)
     .map((d): Deal => {
       const { price, regular, cut, url, expiry } = d.deal;
       return {
@@ -109,7 +130,7 @@ async function fetchItadDeals(region: string, cc: string): Promise<ScrapeResult>
       };
     });
   console.log(`[epic] IsThereAnyDeal: ${deals.length} juegos con descuento de ${list.length} ofertas`);
-  return { deals, complete: res !== null };
+  return { deals, complete };
 }
 
 /** La colección "freegames" de Epic: juegos gratis de la semana y algunos con descuento por tiempo limitado. */

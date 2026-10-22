@@ -5,10 +5,10 @@ const STORE_URL = 'https://store.steampowered.com';
 const API_URL = 'https://api.steampowered.com';
 const ASSETS_URL = 'https://shared.akamai.steamstatic.com/store_item_assets/';
 /**
- * Steam tiene ~10.000 juegos en oferta; el buscador los ordena por relevancia, así que bastan los
- * primeros para cubrir lo que interesa sin llenar Firestore de títulos desconocidos.
+ * Steam tiene ~9.000 juegos en oferta; el buscador los ordena por relevancia, así que bastan los
+ * primeros 1.000 para cubrir lo que interesa sin llenar Firestore (y la descarga de la app) de títulos desconocidos.
  */
-const MAX_RESULTS = Number(process.env.STEAM_MAX_RESULTS ?? 200);
+const MAX_RESULTS = Number(process.env.STEAM_MAX_RESULTS ?? 1000);
 /** Máximo que acepta el buscador por página. */
 const SEARCH_PAGE_SIZE = 100;
 /** `category1=998`: solo juegos (sin DLC, bandas sonoras ni software). */
