@@ -14,8 +14,10 @@ android {
         applicationId = "com.example.psdeals"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0-beta01"
+        // Subirlo en cada APK que se reparta: Android solo instala encima uno con versionCode mayor, y el
+        // aviso de actualización (config/update.latestVersionCode) se compara contra este número.
+        versionCode = 2
+        versionName = "1.0.0-beta02"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
