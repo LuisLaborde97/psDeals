@@ -38,6 +38,8 @@ android {
     }
     buildFeatures {
         compose = true
+        // BuildConfig.VERSION_CODE: lo compara el aviso de actualización (AGP 9 lo trae desactivado).
+        buildConfig = true
     }
 }
 

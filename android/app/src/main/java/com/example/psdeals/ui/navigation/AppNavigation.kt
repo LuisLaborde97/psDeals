@@ -32,6 +32,8 @@ import com.example.psdeals.R
 import com.example.psdeals.ui.account.AccountViewModel
 import com.example.psdeals.ui.deals.DealsScreen
 import com.example.psdeals.ui.deals.rememberBackgroundBrush
+import com.example.psdeals.ui.update.UpdateDialog
+import com.example.psdeals.ui.update.UpdateViewModel
 import com.example.psdeals.ui.wishlist.WishlistScreen
 
 /** Rutas como texto: con dos pantallas sin argumentos no compensa el plugin de serialización de las rutas tipadas. */
@@ -68,6 +70,11 @@ fun AppNavigation(
     val accountViewModel: AccountViewModel = viewModel(factory = AccountViewModel.Factory)
     val account by accountViewModel.uiState.collectAsStateWithLifecycle()
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+
+    // Aquí y no en una pantalla: el aviso de versión nueva debe salir sobre cualquier pestaña.
+    val updateViewModel: UpdateViewModel = viewModel(factory = UpdateViewModel.Factory)
+    val pendingUpdate by updateViewModel.pendingUpdate.collectAsStateWithLifecycle()
+    pendingUpdate?.let { update -> UpdateDialog(update = update, onPostpone = { updateViewModel.postpone(update) }) }
 
     // El degradado va aquí, detrás de las pantallas y de la barra inferior, para que sea continuo.
     Scaffold(

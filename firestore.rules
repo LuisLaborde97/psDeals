@@ -11,6 +11,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Configuración remota (ej. config/update, el aviso de versión nueva): la app solo la lee; se edita
+    // desde la consola de Firebase, que no pasa por estas reglas.
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Perfil de cada usuario (anónimo o vinculado con Google): solo su dueño lo lee o modifica.
     match /users/{uid} {
       function isOwner() {
