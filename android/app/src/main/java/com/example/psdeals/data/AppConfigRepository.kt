@@ -2,6 +2,7 @@ package com.example.psdeals.data
 
 import android.util.Log
 import androidx.core.net.toUri
+import com.example.psdeals.BuildConfig
 import com.example.psdeals.model.AppUpdate
 import com.google.firebase.Firebase
 import com.google.firebase.firestore.DocumentSnapshot
@@ -11,7 +12,10 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 
-/** Configuración remota de la app en la colección `config` (de solo lectura para la app; ver firestore.rules). */
+/**
+ * Configuración remota de la app en la colección `config` (de solo lectura para la app; ver firestore.rules).
+ * La regla `config/{docId}` ya cubre `update_debug`: no hace falta tocar las reglas.
+ */
 class AppConfigRepository(
     private val db: FirebaseFirestore = Firebase.firestore,
 ) {
@@ -56,6 +60,11 @@ class AppConfigRepository(
     private companion object {
         const val TAG = "AppConfigRepository"
         const val COLLECTION = "config"
-        const val UPDATE_DOC = "update"
+
+        /**
+         * Las compilaciones debug leen su propio documento: así se puede probar el aviso (incluso uno
+         * obligatorio) sin que les salga a los usuarios del alpha, que usan la release y leen `update`.
+         */
+        val UPDATE_DOC = if (BuildConfig.DEBUG) "update_debug" else "update"
     }
 }
