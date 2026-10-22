@@ -18,4 +18,6 @@ data class Deal(
     val platform: String = StorePlatform.PLAYSTATION.id,
     /** Enlace de compra común a todas las tiendas; si falta se usa [productUrl]. */
     val storeUrl: String? = null,
+    /** Fin de la rebaja (epoch millis) si la tienda lo publica; null si no (ej. PlayStation). */
+    val endDate: Long? = null,
 )

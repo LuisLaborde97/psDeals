@@ -18,6 +18,21 @@ export interface Deal {
   /** Enlace directo a la página de compra en la tienda de origen. */
   storeUrl: string;
   region: string;
+  /**
+   * Fin de la rebaja en epoch millis, si la tienda lo publica (Steam, Epic, ITAD, Xbox); null si no
+   * (PlayStation). La app oculta las ofertas vencidas aunque el scraper aún no haya vuelto a correr.
+   */
+  endDate: number | null;
   /** Géneros localizados por la tienda (ej. "Acción", "Terror"). Vacío si no se pudieron obtener. */
   genres: string[];
+}
+
+/** Lo que devuelve cada motor de tienda. */
+export interface ScrapeResult {
+  deals: Deal[];
+  /**
+   * true si se recorrió todo el listado de la tienda (ninguna petición agotó reintentos). Solo entonces
+   * una oferta ausente significa que la rebaja terminó; con un listado parcial no se puede saber.
+   */
+  complete: boolean;
 }

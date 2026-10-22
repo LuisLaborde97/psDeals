@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.psdeals.data.DealsFeed
 import com.example.psdeals.data.DealsRepository
 import com.example.psdeals.model.Deal
 import com.example.psdeals.model.StorePlatform
@@ -49,6 +50,8 @@ sealed interface DealsUiState {
         val isFiltered: Boolean,
         val platforms: Set<StorePlatform>,
         val isSearching: Boolean,
+        /** Sin conexión: la lista es la guardada en el teléfono y puede estar desactualizada. */
+        val isFromCache: Boolean = false,
     ) : DealsUiState
     data class Error(val message: String) : DealsUiState
 }
@@ -57,7 +60,11 @@ sealed interface DealsUiState {
 private sealed interface DealsSource {
     data object Loading : DealsSource
     /** @param platforms tiendas por las que ya se filtró [deals] (vacío = sin filtrar). */
-    data class Loaded(val deals: List<Deal>, val platforms: Set<StorePlatform> = emptySet()) : DealsSource
+    data class Loaded(
+        val deals: List<Deal>,
+        val platforms: Set<StorePlatform> = emptySet(),
+        val isFromCache: Boolean = false,
+    ) : DealsSource
     data class Failed(val message: String) : DealsSource
 }
 
@@ -93,7 +100,7 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     private val source: StateFlow<DealsSource> = reloadTrigger
         .flatMapLatest {
             repository.getDeals()
-                .map<List<Deal>, DealsSource> { DealsSource.Loaded(it) }
+                .map<DealsFeed, DealsSource> { DealsSource.Loaded(it.deals, isFromCache = it.isFromCache) }
                 .catch { emit(DealsSource.Failed(it.message ?: "Error desconocido")) }
         }
         // 5 s de gracia: el listener sobrevive a una rotación pero se cierra si la app pasa a segundo plano.
@@ -109,7 +116,7 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
             platforms.isEmpty() -> state.copy(platforms = emptySet())
             else -> {
                 val ids = platforms.mapTo(HashSet()) { it.id }
-                DealsSource.Loaded(state.deals.filter { it.platform in ids }, platforms)
+                state.copy(deals = state.deals.filter { it.platform in ids }, platforms = platforms)
             }
         }
     }
@@ -156,6 +163,7 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
                     isFiltered = activeGenres.isNotEmpty() || needle.isNotEmpty(),
                     platforms = source.platforms,
                     isSearching = needle.isNotEmpty(),
+                    isFromCache = source.isFromCache,
                 )
             }
         }

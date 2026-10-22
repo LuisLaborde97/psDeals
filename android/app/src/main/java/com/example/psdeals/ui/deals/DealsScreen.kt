@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -121,6 +122,7 @@ private const val DEAL_CARD_CONTENT_TYPE = "deal_card"
 /** Mínimo para guardar una búsqueda: con 1-2 letras casi siempre es una búsqueda a medio escribir. */
 private const val MIN_SEARCH_LENGTH = 3
 private const val SEARCH_RECORD_DELAY_MS = 1_500L
+private const val OFFLINE_NOTICE_DELAY_MS = 3_000L
 /** Rosa coral: distinto del rojo del descuento para que el corazón no se confunda con la insignia. */
 private val WishlistColor = Color(0xFFFF5C7A)
 
@@ -273,6 +275,7 @@ fun DealsScreen(
             if (genres.isNotEmpty()) {
                 GenreChips(genres = genres, selectedGenres = selectedGenres, onGenreClick = viewModel::onGenreClick)
             }
+            OfflineNotice(isFromCache = (uiState as? DealsUiState.Success)?.isFromCache == true)
 
             when (val state = uiState) {
                 DealsUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -563,6 +566,17 @@ fun DealsGrid(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Fila completa arriba de la grilla (no en cada tarjeta, que la saturaría): el precio mostrado es el
+        // último que vio el scraper, la tienda puede haberlo cambiado desde entonces.
+        item(key = "price_disclaimer", span = { GridItemSpan(maxLineSpan) }, contentType = "disclaimer") {
+            Text(
+                "Los precios y disponibilidad pueden variar. El precio final es el de la tienda oficial.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            )
+        }
         // contentType: todas las celdas son del mismo tipo, así Compose reutiliza las jerarquías de las tarjetas
         // que salen de pantalla en vez de crearlas desde cero en cada lanzamiento rápido.
         items(deals, key = { it.id }, contentType = { DEAL_CARD_CONTENT_TYPE }) { deal ->
@@ -762,6 +776,33 @@ private fun WishlistButton(isWishlisted: Boolean, onToggle: () -> Unit, modifier
                 modifier = Modifier.size(18.dp),
             )
         }
+    }
+}
+
+/**
+ * Aviso de datos guardados: sin conexión, Firestore sirve la última lista descargada, y sus precios o
+ * vigencia pueden haber cambiado. Espera unos segundos antes de aparecer: al arrancar, el primer resultado
+ * suele venir de la caché y el del servidor llega enseguida, y el aviso solo parpadearía.
+ */
+@Composable
+private fun OfflineNotice(isFromCache: Boolean) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(isFromCache) {
+        if (isFromCache) delay(OFFLINE_NOTICE_DELAY_MS)
+        visible = isFromCache
+    }
+    AnimatedVisibility(visible = visible, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+        Text(
+            "Sin conexión: mostrando las ofertas guardadas. Pueden haber cambiado o terminado.",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        )
     }
 }
 

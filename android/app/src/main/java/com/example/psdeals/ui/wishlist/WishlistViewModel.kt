@@ -14,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
@@ -23,8 +24,11 @@ import kotlinx.coroutines.flow.stateIn
 sealed interface WishlistUiState {
     data object Loading : WishlistUiState
 
-    /** @param deals la más reciente primero. */
-    data class Success(val deals: List<Deal>) : WishlistUiState
+    /**
+     * @param deals la más reciente primero.
+     * @param expiredIds las que ya no están en oferta (mismas reglas que la lista principal: DealsRepository.isActive).
+     */
+    data class Success(val deals: List<Deal>, val expiredIds: Set<String> = emptySet()) : WishlistUiState
     data class Error(val message: String) : WishlistUiState
 }
 
@@ -41,13 +45,16 @@ class WishlistViewModel(
         .flatMapLatest { ids ->
             // arrayUnion agrega al final: se invierte para mostrar primero lo último que guardó.
             val order = ids.asReversed().withIndex().associate { (index, id) -> id to index }
-            repository.getDealsByIds(ids)
-                .map<List<Deal>, WishlistUiState> { deals -> WishlistUiState.Success(deals.sortedBy { order[it.id] }) }
+            combine(repository.getDealsByIds(ids), repository.observeLastRuns()) { deals, lastRuns ->
+                val now = System.currentTimeMillis()
+                WishlistUiState.Success(
+                    deals = deals.sortedBy { order[it.id] },
+                    expiredIds = deals.filterNot { DealsRepository.isActive(it, now, lastRuns[it.platform]) }.mapTo(HashSet()) { it.id },
+                ) as WishlistUiState
+            }
                 .catch { emit(WishlistUiState.Error(it.message ?: "Error desconocido")) }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WishlistUiState.Loading)
-
-    fun isExpired(deal: Deal): Boolean = !DealsRepository.isActive(deal)
 
     companion object {
         val Factory: ViewModelProvider.Factory = viewModelFactory {

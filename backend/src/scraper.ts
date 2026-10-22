@@ -1,5 +1,5 @@
 import puppeteer, { type Browser, type HTTPResponse, type Page } from 'puppeteer';
-import type { Deal } from './types.js';
+import type { Deal, ScrapeResult } from './types.js';
 
 const STORE_URL = 'https://store.playstation.com';
 /** Categoría "Todas las ofertas" (GMA_ALL_DEALS). Es la misma en es-co y en-us. */
@@ -45,8 +45,10 @@ interface CategoryPage {
   genres: FacetValue[];
 }
 
-export async function scrapeDeals(region: string): Promise<Deal[]> {
+export async function scrapeDeals(region: string): Promise<ScrapeResult> {
   const deals = new Map<string, Deal>();
+  /** false si alguna página de ofertas (no de géneros) agotó reintentos: el listado quedó incompleto. */
+  let complete = true;
   /** Todos los productos vistos (con o sin descuento): la categoría de ofertas también lista precios completos. */
   const seenProducts = new Set<string>();
   let browser: Browser | undefined;
@@ -76,13 +78,17 @@ export async function scrapeDeals(region: string): Promise<Deal[]> {
         addAll(s.products);
       }
     } catch (err) {
+      // Sin la landing no se conocen las categorías de sus carruseles: puede faltar parte del listado.
+      complete = false;
       console.warn(`[scraper] /pages/deals no disponible en ${region}: ${errMsg(err)}`);
     }
 
     // 2. Recorre cada categoría de ofertas página por página.
     const genresByCategory = new Map<string, FacetValue[]>();
     for (const categoryId of categoryIds) {
-      genresByCategory.set(categoryId, await crawlCategory(page, region, categoryId, null, addAll));
+      const crawl = await crawlCategory(page, region, categoryId, null, addAll);
+      genresByCategory.set(categoryId, crawl.genres);
+      complete &&= crawl.complete;
     }
     console.log(`[scraper] ${deals.size} con descuento de ${seenProducts.size} productos`);
 
@@ -108,7 +114,7 @@ export async function scrapeDeals(region: string): Promise<Deal[]> {
     await browser?.close().catch(() => {});
   }
 
-  return [...deals.values()];
+  return { deals: [...deals.values()], complete };
 }
 
 async function scrapeDealsLanding(
@@ -167,21 +173,24 @@ async function scrapeDealsLanding(
   return strands;
 }
 
-/** Recorre todas las páginas de una categoría (opcionalmente filtrada) y devuelve la faceta de géneros. */
+/**
+ * Recorre todas las páginas de una categoría (opcionalmente filtrada) y devuelve la faceta de géneros.
+ * complete = false si alguna página agotó reintentos.
+ */
 async function crawlCategory(
   page: Page,
   region: string,
   categoryId: string,
   filter: CategoryFilter | null,
   onProducts: (products: StoreProduct[]) => void,
-): Promise<FacetValue[]> {
+): Promise<{ genres: FacetValue[]; complete: boolean }> {
   const label = filter ? `${categoryId} [${filter.key}]` : categoryId;
   let genres: FacetValue[] = [];
   for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
     const result = await withRetries(`categoría ${label} p.${pageNum}`, () =>
       fetchCategoryPage(page, region, categoryId, pageNum, filter),
     );
-    if (!result) break; // agotó reintentos: seguimos con lo que ya tenemos
+    if (!result) return { genres, complete: false }; // agotó reintentos: seguimos con lo que ya tenemos
     if (pageNum === 1) genres = result.genres;
     onProducts(result.products);
     if (!filter) {
@@ -189,7 +198,7 @@ async function crawlCategory(
     }
     if (result.isLast || result.products.length === 0) break;
   }
-  return genres;
+  return { genres, complete: true };
 }
 
 async function fetchCategoryPage(
@@ -262,6 +271,7 @@ function toDeal(p: StoreProduct, region: string): Deal | null {
     storeUrl,
     region,
     genres: [], // se completan en la fase de géneros de scrapeDeals
+    endDate: null, // la grilla de la PS Store no publica cuándo termina la rebaja
   };
 }
 

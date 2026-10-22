@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
 import { errMsg } from './scraper.js';
-import type { Deal } from './types.js';
+import type { Deal, Platform } from './types.js';
 
 const COLLECTION = 'deals';
 const MAX_BATCH_OPS = 450;
@@ -77,6 +77,7 @@ export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDe
           discountPercent: deal.discountPercent,
           platform: deal.platform,
           storeUrl: deal.storeUrl,
+          endDate: deal.endDate,
           // Si la fase de géneros falló en esta ejecución, no se borran los que ya estaban guardados.
           ...(deal.genres.length > 0 && { genres: deal.genres }),
           updatedAt: now,
@@ -103,6 +104,21 @@ export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDe
     `[firestore] ${written} escritos (${deals.length - existing.size} nuevos, ${existing.size} actualizados), ${failed} fallidos`,
   );
   return { newPushCandidates: pushCandidates, savedIds };
+}
+
+/**
+ * Marca en `config/scraper.lastRunAt.<tienda>` que la tienda se recorrió completa en esta ejecución. La app
+ * oculta las ofertas que no se vieron en la última ejecución de su tienda: el backend nunca borra ofertas,
+ * y sin esta marca una rebaja terminada seguía visible hasta 3 días.
+ * Solo se marcan tiendas cuyo motor funcionó y cuyas ofertas se guardaron todas: si se marcara una con
+ * lotes fallidos, sus ofertas no escritas parecerían terminadas.
+ */
+export async function markPlatformsRun(platforms: Platform[]): Promise<void> {
+  if (platforms.length === 0) return;
+  initFirebase();
+  const lastRunAt = Object.fromEntries(platforms.map((p) => [p, FieldValue.serverTimestamp()]));
+  await getFirestore().collection('config').doc('scraper').set({ lastRunAt }, { merge: true });
+  console.log(`[firestore] config/scraper.lastRunAt actualizado: ${platforms.join(', ')}`);
 }
 
 async function fetchPrevious(db: Firestore, refs: DocumentReference[]): Promise<Map<string, PreviousDeal>> {

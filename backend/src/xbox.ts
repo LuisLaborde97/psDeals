@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { errMsg, formatPrice, withRetries } from './scraper.js';
-import type { Deal } from './types.js';
+import type { Deal, ScrapeResult } from './types.js';
 
 /**
  * API con la que xbox.com arma su catálogo. El canal GameDeals es la sección "Ofertas" de la tienda:
@@ -21,6 +21,8 @@ interface XboxPrice {
   msrp?: number;
   currency?: string;
   eligibilityInfo?: { eligibility?: string };
+  /** Fin de esta disponibilidad de precio, "MM/DD/YYYY HH:mm:ss" en UTC. */
+  endDateUtc?: string;
 }
 
 interface ProductSummary {
@@ -38,7 +40,7 @@ interface BrowseResponse {
 }
 
 /** Ofertas de la tienda de Xbox para la región de la PS Store (`es-co` → locale es-CO, precios en COP). */
-export async function scrapeXboxDeals(region: string): Promise<Deal[]> {
+export async function scrapeXboxDeals(region: string): Promise<ScrapeResult> {
   const [lang, country = 'us'] = region.split('-');
   const locale = `${lang}-${country.toUpperCase()}`;
   // Popularidad en vez de descuento: ordenar por % trae primero juegos poco conocidos.
@@ -47,6 +49,7 @@ export async function scrapeXboxDeals(region: string): Promise<Deal[]> {
   const deals = new Map<string, Deal>();
   let continuation: string | undefined;
   let total = 0;
+  let complete = true;
   // Tope de páginas (25 productos c/u) por si el token de continuación se repitiera.
   const maxPages = Math.ceil(MAX_RESULTS / 25) + 5;
   for (let page = 1; page <= maxPages && deals.size < MAX_RESULTS; page++) {
@@ -60,6 +63,7 @@ export async function scrapeXboxDeals(region: string): Promise<Deal[]> {
         ...(continuation && { EncodedCT: continuation }),
       }),
     );
+    if (!res) complete = false; // agotó reintentos: faltan páginas del canal de ofertas
     const channel = Object.values(res?.channels ?? {})[0];
     const products = Object.values(res?.productSummaries ?? {});
     if (!channel || products.length === 0) break;
@@ -73,7 +77,7 @@ export async function scrapeXboxDeals(region: string): Promise<Deal[]> {
     if (!continuation) break;
   }
   console.log(`[xbox] ${deals.size} con descuento (canal de ofertas: ${total} en total)`);
-  return [...deals.values()];
+  return { deals: [...deals.values()], complete };
 }
 
 function toDeal(p: ProductSummary, region: string, locale: string): Deal | null {
@@ -101,7 +105,20 @@ function toDeal(p: ProductSummary, region: string, locale: string): Deal | null 
     storeUrl,
     region,
     genres: p.categories ?? [],
+    endDate: parseXboxDate(price.endDateUtc),
   };
+}
+
+/**
+ * "11/05/2026 14:59:59" (UTC) → ms. Los precios sin fin real traen fechas lejanas (ej. año 9998): se
+ * ignoran las de más de un año, que no describen el fin de una rebaja.
+ */
+function parseXboxDate(text: string | undefined): number | null {
+  const m = text?.match(/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const [, mo, d, y, h, mi, s] = m.map(Number);
+  const ms = Date.UTC(y, mo - 1, d, h, mi, s);
+  return Number.isFinite(ms) && ms - Date.now() < 366 * 24 * 60 * 60 * 1000 ? ms : null;
 }
 
 /** xbox.com ignora el slug (solo usa el ID), pero uno legible hace el enlace más claro. */

@@ -1,14 +1,14 @@
-import { PUSH_MIN_DISCOUNT, loadPreviousDeals, saveDeals } from './firestore.js';
+import { PUSH_MIN_DISCOUNT, loadPreviousDeals, markPlatformsRun, saveDeals } from './firestore.js';
 import { notifyDeals } from './notify.js';
 import { errMsg, scrapeDeals } from './scraper.js';
 import { scrapeEpicDeals } from './epic.js';
 import { scrapeSteamDeals } from './steam.js';
 import { findWishlistAlerts, sendWishlistAlerts } from './wishlistAlerts.js';
 import { scrapeXboxDeals } from './xbox.js';
-import type { Deal, Platform } from './types.js';
+import type { Deal, Platform, ScrapeResult } from './types.js';
 
 /** Un motor por tienda; todos reciben la región de la PS Store (ej. es-co) y la adaptan a su API. */
-const ENGINES: { platform: Platform; scrape: (region: string) => Promise<Deal[]> }[] = [
+const ENGINES: { platform: Platform; scrape: (region: string) => Promise<ScrapeResult> }[] = [
   { platform: 'playstation', scrape: scrapeDeals },
   { platform: 'steam', scrape: scrapeSteamDeals },
   { platform: 'epic', scrape: scrapeEpicDeals },
@@ -30,19 +30,27 @@ async function main(): Promise<number> {
   // En paralelo: un motor que falla o vuelve vacío no impide guardar lo de los demás.
   const results = await Promise.allSettled(engines.map((e) => e.scrape(region)));
   const deals: Deal[] = [];
+  /** Tiendas recorridas enteras: solo de ellas una oferta ausente significa que terminó (ver markPlatformsRun). */
+  const completePlatforms: Platform[] = [];
   let brokenEngines = 0;
   results.forEach((result, i) => {
     const { platform } = engines[i];
     if (result.status === 'rejected') {
       brokenEngines++;
       console.error(`[main] ${platform}: error fatal: ${errMsg(result.reason)}`);
-    } else if (result.value.length === 0) {
+    } else if (result.value.deals.length === 0) {
       // Casi seguro el scraping se rompió (la tienda cambió o hubo bloqueo): no tocar sus documentos.
       brokenEngines++;
       console.error(`[main] ${platform}: 0 ofertas, no se escribirá nada de esta tienda`);
     } else {
-      console.log(`[main] ${platform}: ${result.value.length} ofertas con descuento`);
-      deals.push(...result.value);
+      const { deals: found, complete } = result.value;
+      const withEnd = found.filter((d) => d.endDate !== null).length;
+      console.log(
+        `[main] ${platform}: ${found.length} ofertas con descuento (${withEnd} con fecha de fin)` +
+          (complete ? '' : ' — listado INCOMPLETO: no se marcará como ejecución completa'),
+      );
+      deals.push(...found);
+      if (complete) completePlatforms.push(platform);
     }
   });
   if (deals.length === 0) {
@@ -95,6 +103,15 @@ async function main(): Promise<number> {
   const { failed } = await notifyDeals(newPushCandidates);
   // Tokens fallidos (teléfonos desinstalados) son normales y se limpian: no marcan la ejecución como fallida.
   await sendWishlistAlerts(alerts.filter((a) => savedIds.has(a.deal.id)));
+  // Solo tiendas completas cuyas ofertas se guardaron todas: con un lote fallido, sus ofertas no
+  // escritas conservarían el lastSeenAt anterior y la app las tomaría por terminadas.
+  const fullySaved = completePlatforms.filter((p) => deals.every((d) => d.platform !== p || savedIds.has(d.id)));
+  try {
+    await markPlatformsRun(fullySaved);
+  } catch (err) {
+    // Sin la marca la app sigue con la regla de 3 días: peor, pero no rompe nada.
+    console.error(`[main] no se pudo actualizar config/scraper: ${errMsg(err)}`);
+  }
   // Un motor roto marca la ejecución como fallida para que se note en GitHub Actions.
   return failed > 0 || brokenEngines > 0 ? 1 : 0;
 }

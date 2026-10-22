@@ -16,8 +16,8 @@ android {
         targetSdk = 37
         // Subirlo en cada APK que se reparta: Android solo instala encima uno con versionCode mayor, y el
         // aviso de actualización (config/update.latestVersionCode) se compara contra este número.
-        versionCode = 2
-        versionName = "1.0.0-beta02"
+        versionCode = 3
+        versionName = "1.0.0-beta03"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -1,5 +1,5 @@
 import { errMsg, withRetries } from './scraper.js';
-import type { Deal } from './types.js';
+import type { Deal, ScrapeResult } from './types.js';
 
 const STORE_URL = 'https://store.steampowered.com';
 const API_URL = 'https://api.steampowered.com';
@@ -42,26 +42,32 @@ interface StoreItem {
     formatted_original_price?: string;
     discount_pct?: number;
     price_cannot_be_displayed_as_discount?: boolean;
+    /** discount_end_date en segundos epoch. */
+    active_discounts?: { discount_end_date?: number }[];
   };
 }
 
 /** Ofertas de Steam para la región de la PS Store (`es-co` → país CO, textos en español, precios en COP). */
-export async function scrapeSteamDeals(region: string): Promise<Deal[]> {
+export async function scrapeSteamDeals(region: string): Promise<ScrapeResult> {
   const [lang, country = 'us'] = region.split('-');
   const language = STEAM_LANGUAGES[lang] ?? 'english';
   const cc = country.toUpperCase();
 
-  const appIds = await searchDiscountedAppIds(cc, language);
-  const [items, tagNames] = await Promise.all([fetchItems(appIds, cc, language), fetchTagNames(language)]);
+  const search = await searchDiscountedAppIds(cc, language);
+  const appIds = search.ids;
+  const [fetched, tagNames] = await Promise.all([fetchItems(appIds, cc, language), fetchTagNames(language)]);
+  const items = fetched.items;
 
   const deals = items.map((item) => toDeal(item, region, tagNames)).filter((d): d is Deal => d !== null);
   console.log(`[steam] ${deals.length} con descuento de ${appIds.length} juegos consultados`);
-  return deals;
+  // Sin los géneros (GetTagList) el listado sigue completo: solo faltan etiquetas.
+  return { deals, complete: search.complete && fetched.complete };
 }
 
 /** El buscador web es el único listado público de ofertas; solo se usa para los appids, los datos vienen de GetItems. */
-async function searchDiscountedAppIds(cc: string, language: string): Promise<number[]> {
+async function searchDiscountedAppIds(cc: string, language: string): Promise<{ ids: number[]; complete: boolean }> {
   const ids: number[] = [];
+  let complete = true;
   for (let start = 0; start < MAX_RESULTS; start += SEARCH_PAGE_SIZE) {
     const params = new URLSearchParams({
       specials: '1',
@@ -75,7 +81,10 @@ async function searchDiscountedAppIds(cc: string, language: string): Promise<num
     const page = await withRetries(`steam búsqueda start=${start}`, () =>
       fetchJson<{ results_html?: string; total_count?: number }>(`${STORE_URL}/search/results/?${params}`),
     );
-    if (!page?.results_html) break;
+    if (!page?.results_html) {
+      complete = false; // agotó reintentos o respuesta inesperada: faltan páginas
+      break;
+    }
 
     const before = ids.length;
     // Cada fila es un <a class="search_result_row">; los paquetes y bundles traen varios appids o ninguno.
@@ -87,11 +96,12 @@ async function searchDiscountedAppIds(cc: string, language: string): Promise<num
     console.log(`[steam] búsqueda start=${start}: ${ids.length - before} juegos (total ${page.total_count ?? '?'})`);
     if (ids.length === before) break;
   }
-  return [...new Set(ids)];
+  return { ids: [...new Set(ids)], complete };
 }
 
-async function fetchItems(appIds: number[], cc: string, language: string): Promise<StoreItem[]> {
+async function fetchItems(appIds: number[], cc: string, language: string): Promise<{ items: StoreItem[]; complete: boolean }> {
   const items: StoreItem[] = [];
+  let complete = true;
   for (let i = 0; i < appIds.length; i += SEARCH_PAGE_SIZE) {
     const input = {
       ids: appIds.slice(i, i + SEARCH_PAGE_SIZE).map((appid) => ({ appid })),
@@ -103,9 +113,10 @@ async function fetchItems(appIds: number[], cc: string, language: string): Promi
         `${API_URL}/IStoreBrowseService/GetItems/v1/?input_json=${encodeURIComponent(JSON.stringify(input))}`,
       ),
     );
+    if (!res) complete = false;
     items.push(...(res?.response?.store_items ?? []));
   }
-  return items;
+  return { items, complete };
 }
 
 /** Nombres localizados de las etiquetas; si falla, las ofertas quedan sin géneros en vez de abortar. */
@@ -144,7 +155,14 @@ function toDeal(item: StoreItem, region: string, tagNames: Map<number, string>):
       .filter((t) => GENRE_TAG_IDS.has(t.tagid) && tagNames.has(t.tagid))
       .slice(0, MAX_GENRES)
       .map((t) => tagNames.get(t.tagid)!),
+    endDate: toEndDate(price.active_discounts?.map((d) => d.discount_end_date)),
   };
+}
+
+/** El fin más próximo entre los descuentos activos (segundos → ms); null si Steam no lo informa. */
+function toEndDate(endsInSeconds: (number | undefined)[] | undefined): number | null {
+  const valid = (endsInSeconds ?? []).filter((s): s is number => typeof s === 'number' && s > 0);
+  return valid.length > 0 ? Math.min(...valid) * 1000 : null;
 }
 
 function centsToNumber(cents: string | undefined): number | null {
