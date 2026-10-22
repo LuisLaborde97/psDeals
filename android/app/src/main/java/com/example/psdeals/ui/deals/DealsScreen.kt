@@ -148,7 +148,7 @@ fun DealsScreen(
     LaunchedEffect(isReady) { if (isReady) onContentReady() }
     val genres by viewModel.availableGenres.collectAsStateWithLifecycle()
     val selectedGenres by viewModel.selectedGenres.collectAsStateWithLifecycle()
-    val selectedPlatform by viewModel.selectedPlatform.collectAsStateWithLifecycle()
+    val selectedPlatforms by viewModel.selectedPlatforms.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val account by accountViewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
@@ -258,11 +258,15 @@ fun DealsScreen(
                 onRemoveHistory = accountViewModel::removeSearch,
             )
             PlatformChips(
-                selectedPlatform = selectedPlatform,
+                selectedPlatforms = selectedPlatforms,
+                // Barra expandida al cambiar las tiendas: el contador de la selección nueva queda a la vista.
                 onPlatformClick = { platform ->
-                    // Barra expandida al cambiar de tienda: el contador de la tienda nueva queda a la vista.
                     scrollBehavior.state.heightOffset = 0f
                     viewModel.onPlatformClick(platform)
+                },
+                onAllClick = {
+                    scrollBehavior.state.heightOffset = 0f
+                    viewModel.onAllPlatformsClick()
                 },
             )
             if (genres.isNotEmpty()) {
@@ -284,12 +288,12 @@ fun DealsScreen(
                             ErrorContent(message = state.message, onRetry = viewModel::refreshDeals)
                         }
                         state is DealsUiState.Success && state.deals.isNotEmpty() ->
-                            // Grilla nueva (y su scroll en 0) cuando llega la lista de otra tienda, o al empezar o
+                            // Grilla nueva (y su scroll en 0) cuando llega la lista de otras tiendas, o al empezar o
                             // vaciar una búsqueda. Reiniciar el LazyGridState al tocar no basta: la lista llega
                             // después y la grilla conservaría a la vista el primer elemento anterior si existe en
                             // la lista nueva. Mientras se escribe (texto → texto) la clave no cambia: la grilla no
                             // se recrea en cada tecla.
-                            key(state.platform, state.isSearching) {
+                            key(state.platforms, state.isSearching) {
                                 DealsGrid(
                                     deals = state.deals,
                                     wishlist = account.wishlist,
@@ -301,7 +305,9 @@ fun DealsScreen(
                             NoMatchesContent(onClearFilters = viewModel::clearFilters)
                         }
                         else -> ScrollableCentered {
-                            val store = selectedPlatform?.let { " de ${it.label}" }.orEmpty()
+                            // Con una sola tienda se nombra; con varias, una lista larga no aporta.
+                            val store = selectedPlatforms.singleOrNull()?.let { " de ${it.label}" }
+                                ?: if (selectedPlatforms.isEmpty()) "" else " en esas tiendas"
                             Text("No hay ofertas$store por ahora.\nVuelve mañana 🎮", textAlign = TextAlign.Center)
                         }
                     }
@@ -441,21 +447,28 @@ private fun SearchHistoryPanel(history: List<String>, onClick: (String) -> Unit,
     }
 }
 
-/** `null` representa "Todas": no es una tienda, así que no vive en [StorePlatform]. */
+/**
+ * Selección múltiple: cada tienda se marca o desmarca por separado. "Todas" no es una tienda (no vive en
+ * [StorePlatform]): está marcado cuando no hay ninguna elegida, y tocarlo limpia la selección.
+ */
 @Composable
-private fun PlatformChips(selectedPlatform: StorePlatform?, onPlatformClick: (StorePlatform?) -> Unit) {
+private fun PlatformChips(
+    selectedPlatforms: Set<StorePlatform>,
+    onPlatformClick: (StorePlatform) -> Unit,
+    onAllClick: () -> Unit,
+) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         item(key = "all") {
-            SelectableChip(label = "Todas", selected = selectedPlatform == null, onClick = { onPlatformClick(null) })
+            SelectableChip(label = "Todas", selected = selectedPlatforms.isEmpty(), onClick = onAllClick)
         }
         items(StorePlatform.entries, key = { it.id }) { platform ->
             SelectableChip(
                 label = platform.label,
-                selected = platform == selectedPlatform,
+                selected = platform in selectedPlatforms,
                 onClick = { onPlatformClick(platform) },
                 brandColor = platform.brandColor,
                 icon = platform.iconRes,

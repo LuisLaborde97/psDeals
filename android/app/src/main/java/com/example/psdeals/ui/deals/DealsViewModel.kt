@@ -36,18 +36,18 @@ sealed interface DealsUiState {
 
     /**
      * @param deals lista ya filtrada por tienda, búsqueda y género.
-     * @param totalCount ofertas de la tienda elegida (o de todas) antes de filtrar por búsqueda y género.
+     * @param totalCount ofertas de las tiendas elegidas (o de todas) antes de filtrar por búsqueda y género.
      * @param isFiltered hay búsqueda o género activos (distingue "sin ofertas" de "sin coincidencias").
-     * @param platform tienda de la que salen [deals] (null = todas). Viaja con los datos y no aparte
-     *   para que la UI sepa exactamente cuándo llegó la lista de la tienda nueva.
-     * @param isSearching hay texto en el buscador; igual que [platform], marca cuándo llega la lista
+     * @param platforms tiendas de las que salen [deals] (vacío = todas). Viaja con los datos y no aparte
+     *   para que la UI sepa exactamente cuándo llegó la lista de la selección nueva.
+     * @param isSearching hay texto en el buscador; igual que [platforms], marca cuándo llega la lista
      *   sin filtrar al vaciarlo.
      */
     data class Success(
         val deals: List<Deal>,
         val totalCount: Int,
         val isFiltered: Boolean,
-        val platform: StorePlatform?,
+        val platforms: Set<StorePlatform>,
         val isSearching: Boolean,
     ) : DealsUiState
     data class Error(val message: String) : DealsUiState
@@ -56,8 +56,8 @@ sealed interface DealsUiState {
 /** Estado crudo de Firestore, antes de aplicar filtros. */
 private sealed interface DealsSource {
     data object Loading : DealsSource
-    /** @param platform tienda por la que ya se filtró [deals] (null = sin filtrar). */
-    data class Loaded(val deals: List<Deal>, val platform: StorePlatform? = null) : DealsSource
+    /** @param platforms tiendas por las que ya se filtró [deals] (vacío = sin filtrar). */
+    data class Loaded(val deals: List<Deal>, val platforms: Set<StorePlatform> = emptySet()) : DealsSource
     data class Failed(val message: String) : DealsSource
 }
 
@@ -76,9 +76,12 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     private val _selectedGenres = MutableStateFlow<Set<String>>(emptySet())
     val selectedGenres: StateFlow<Set<String>> = _selectedGenres.asStateFlow()
 
-    /** Tienda elegida; null = "Todas". Funciona como pestaña: tocar la activa no la deselecciona. */
-    private val _selectedPlatform = MutableStateFlow<StorePlatform?>(StorePlatform.PLAYSTATION)
-    val selectedPlatform: StateFlow<StorePlatform?> = _selectedPlatform.asStateFlow()
+    /**
+     * Tiendas elegidas (selección múltiple); vacío = "Todas", así desmarcar la última vuelve solo a ver todo.
+     * Arranca en PlayStation, como antes de la selección múltiple.
+     */
+    private val _selectedPlatforms = MutableStateFlow(setOf(StorePlatform.PLAYSTATION))
+    val selectedPlatforms: StateFlow<Set<StorePlatform>> = _selectedPlatforms.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -96,12 +99,18 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
         // 5 s de gracia: el listener sobrevive a una rotación pero se cierra si la app pasa a segundo plano.
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DealsSource.Loading)
 
-    /** Ofertas de la tienda elegida (o todas); los géneros y el resto de filtros parten de aquí. */
-    private val platformSource: StateFlow<DealsSource> = combine(source, _selectedPlatform) { state, platform ->
+    /**
+     * Primer filtro (OR entre tiendas): ofertas de cualquiera de las tiendas elegidas, o de todas. Los géneros
+     * disponibles y los demás filtros parten de aquí, así que se combinan con AND.
+     */
+    private val platformSource: StateFlow<DealsSource> = combine(source, _selectedPlatforms) { state, platforms ->
         when {
             state !is DealsSource.Loaded -> state
-            platform == null -> state.copy(platform = null)
-            else -> DealsSource.Loaded(state.deals.filter { it.platform == platform.id }, platform)
+            platforms.isEmpty() -> state.copy(platforms = emptySet())
+            else -> {
+                val ids = platforms.mapTo(HashSet()) { it.id }
+                DealsSource.Loaded(state.deals.filter { it.platform in ids }, platforms)
+            }
         }
     }
         .flowOn(Dispatchers.Default)
@@ -145,7 +154,7 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
                     deals = filtered,
                     totalCount = source.deals.size,
                     isFiltered = activeGenres.isNotEmpty() || needle.isNotEmpty(),
-                    platform = source.platform,
+                    platforms = source.platforms,
                     isSearching = needle.isNotEmpty(),
                 )
             }
@@ -161,9 +170,13 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     /** Alterna el género: si estaba elegido lo quita, si no lo agrega (los demás se mantienen). */
     fun onGenreClick(genre: String) = _selectedGenres.update { if (genre in it) it - genre else it + genre }
 
-    /** null = "Todas". */
-    fun onPlatformClick(platform: StorePlatform?) {
-        _selectedPlatform.value = platform
+    /** Alterna la tienda (las demás se mantienen); desmarcar la última equivale a "Todas". */
+    fun onPlatformClick(platform: StorePlatform) =
+        _selectedPlatforms.update { if (platform in it) it - platform else it + platform }
+
+    /** Chip "Todas": limpia la selección de tiendas. */
+    fun onAllPlatformsClick() {
+        _selectedPlatforms.value = emptySet()
     }
 
     /** No cambia la tienda: limpia búsqueda y géneros dentro de la tienda actual. */
