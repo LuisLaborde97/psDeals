@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">PS Deals</string>
+    <string name="app_name">GoLab Deals</string>
     <string name="channel_daily_deals_name">Ofertas del día</string>
     <string name="channel_daily_deals_description">Nuevas ofertas de la PS Store con 50% de descuento o más</string>
     <string name="channel_wishlist_alerts_name">Alertas de Lista de Deseos</string>
