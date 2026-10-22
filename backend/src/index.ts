@@ -1,4 +1,4 @@
-import { PUSH_MIN_DISCOUNT, loadPreviousDeals, markPlatformsRun, saveDeals } from './firestore.js';
+import { PUSH_MIN_DISCOUNT, deactivateMissing, loadPreviousDeals, markPlatformsRun, saveDeals, saveGenres } from './firestore.js';
 import { notifyDeals } from './notify.js';
 import { errMsg, scrapeDeals } from './scraper.js';
 import { scrapeEpicDeals } from './epic.js';
@@ -111,6 +111,17 @@ async function main(): Promise<number> {
   } catch (err) {
     // Sin la marca la app sigue con la regla de 3 días: peor, pero no rompe nada.
     console.error(`[main] no se pudo actualizar config/scraper: ${errMsg(err)}`);
+  }
+  try {
+    await deactivateMissing(fullySaved, savedIds);
+  } catch (err) {
+    // La app también las descarta por lastRunAt: solo se pierde eficiencia en la paginación.
+    console.error(`[main] no se pudieron marcar las ofertas terminadas: ${errMsg(err)}`);
+  }
+  try {
+    await saveGenres(deals);
+  } catch (err) {
+    console.error(`[main] no se pudo actualizar config/genres: ${errMsg(err)}`);
   }
   // Un motor roto marca la ejecución como fallida para que se note en GitHub Actions.
   return failed > 0 || brokenEngines > 0 ? 1 : 0;

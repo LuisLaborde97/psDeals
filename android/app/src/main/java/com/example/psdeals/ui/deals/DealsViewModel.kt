@@ -9,66 +9,84 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.example.psdeals.data.DealsFeed
+import com.example.psdeals.data.DealsPage
+import com.example.psdeals.data.DealsQuery
 import com.example.psdeals.data.DealsRepository
 import com.example.psdeals.model.Deal
 import com.example.psdeals.model.StorePlatform
+import com.google.firebase.firestore.DocumentSnapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.text.Collator
-import java.text.Normalizer
 
 sealed interface DealsUiState {
     data object Loading : DealsUiState
 
     /**
-     * @param deals lista ya filtrada por tienda, búsqueda y género.
-     * @param totalCount ofertas de las tiendas elegidas (o de todas) antes de filtrar por búsqueda y género.
+     * @param deals ofertas cargadas hasta ahora (páginas acumuladas), ya filtradas por tienda, búsqueda y género.
+     * @param totalCount ofertas de las tiendas elegidas (o de todas), contadas en el servidor; null si no se pudo.
+     * @param filteredCount ofertas que cumplen búsqueda y géneros; null si no se pudo contar (ver
+     *   DealsRepository.countDeals) o si no hay filtros.
      * @param isFiltered hay búsqueda o género activos (distingue "sin ofertas" de "sin coincidencias").
-     * @param platforms tiendas de las que salen [deals] (vacío = todas). Viaja con los datos y no aparte
-     *   para que la UI sepa exactamente cuándo llegó la lista de la selección nueva.
-     * @param isSearching hay texto en el buscador; igual que [platforms], marca cuándo llega la lista
-     *   sin filtrar al vaciarlo.
+     * @param query filtros de los que salen [deals]. Viaja con los datos y no aparte para que la UI sepa
+     *   exactamente cuándo llegó la lista de la selección nueva.
+     * @param isInitialLoading se está pidiendo la primera página de otros filtros (o de un refresco): [deals]
+     *   sigue mostrando la lista anterior hasta que llegue.
+     * @param isLoadingMore se está pidiendo la página siguiente.
+     * @param isLastPage ya se cargaron todas las ofertas de [query].
+     * @param loadMoreFailed falló la última página pedida: la UI ofrece reintentar en vez de pedirla sola.
      */
     data class Success(
         val deals: List<Deal>,
-        val totalCount: Int,
+        val totalCount: Int?,
+        val filteredCount: Int?,
         val isFiltered: Boolean,
-        val platforms: Set<StorePlatform>,
-        val isSearching: Boolean,
+        val query: DealsQuery,
+        val isInitialLoading: Boolean,
+        val isLoadingMore: Boolean,
+        val isLastPage: Boolean,
+        val loadMoreFailed: Boolean = false,
         /** Sin conexión: la lista es la guardada en el teléfono y puede estar desactualizada. */
         val isFromCache: Boolean = false,
     ) : DealsUiState
     data class Error(val message: String) : DealsUiState
 }
 
-/** Estado crudo de Firestore, antes de aplicar filtros. */
-private sealed interface DealsSource {
-    data object Loading : DealsSource
-    /** @param platforms tiendas por las que ya se filtró [deals] (vacío = sin filtrar). */
-    data class Loaded(
-        val deals: List<Deal>,
-        val platforms: Set<StorePlatform> = emptySet(),
-        val isFromCache: Boolean = false,
-    ) : DealsSource
-    data class Failed(val message: String) : DealsSource
-}
+/** Páginas acumuladas de [query]; [query] null = todavía no llegó ninguna. */
+private data class Paging(
+    val query: DealsQuery? = null,
+    val items: List<Deal> = emptyList(),
+    val cursor: DocumentSnapshot? = null,
+    val isLastPage: Boolean = false,
+    val isFromCache: Boolean = false,
+    val totalCount: Int? = null,
+    val filteredCount: Int? = null,
+    val isInitialLoading: Boolean = true,
+    val isLoadingMore: Boolean = false,
+    val loadMoreFailed: Boolean = false,
+    val error: String? = null,
+)
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
 
     /**
@@ -93,83 +111,152 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
-    /** Cada incremento vuelve a crear el listener de Firestore. */
+    /** Cada incremento vuelve a pedir la primera página de los filtros actuales. */
     private val reloadTrigger = MutableStateFlow(0)
 
-    // Sin onStart(Loading): al refrescar se conserva la lista actual en vez de parpadear al spinner.
-    private val source: StateFlow<DealsSource> = reloadTrigger
-        .flatMapLatest {
-            repository.getDeals()
-                .map<DealsFeed, DealsSource> { DealsSource.Loaded(it.deals, isFromCache = it.isFromCache) }
-                .catch { emit(DealsSource.Failed(it.message ?: "Error desconocido")) }
-        }
-        // 5 s de gracia: el listener sobrevive a una rotación pero se cierra si la app pasa a segundo plano.
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DealsSource.Loading)
+    private val paging = MutableStateFlow(Paging())
+    private var loadMoreJob: Job? = null
 
-    /**
-     * Primer filtro (OR entre tiendas): ofertas de cualquiera de las tiendas elegidas, o de todas. Los géneros
-     * disponibles y los demás filtros parten de aquí, así que se combinan con AND.
-     */
-    private val platformSource: StateFlow<DealsSource> = combine(source, _selectedPlatforms) { state, platforms ->
-        when {
-            state !is DealsSource.Loaded -> state
-            platforms.isEmpty() -> state.copy(platforms = emptySet())
-            else -> {
-                val ids = platforms.mapTo(HashSet()) { it.id }
-                state.copy(deals = state.deals.filter { it.platform in ids }, platforms = platforms)
-            }
-        }
+    private val lastRuns: StateFlow<Map<String, Long>> =
+        repository.observeLastRuns().stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** Géneros de las tiendas elegidas (de todas si no hay selección), según config/genres. */
+    val availableGenres: StateFlow<List<String>> = combine(repository.observeGenres(), _selectedPlatforms) { byPlatform, platforms ->
+        val lists = if (platforms.isEmpty()) byPlatform.values else platforms.mapNotNull { byPlatform[it.id] }
+        lists.flatten().distinct().sortedWith(Collator.getInstance()) // orden alfabético con tildes: "Único" junto a la U
     }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DealsSource.Loading)
-
-    /**
-     * Géneros presentes en las ofertas de la tienda elegida (no en la lista filtrada por búsqueda o
-     * género, para que los chips no desaparezcan).
-     */
-    val availableGenres: StateFlow<List<String>> = platformSource
-        .map { state ->
-            (state as? DealsSource.Loaded)?.deals.orEmpty()
-                .flatMap { it.genres }
-                .distinct()
-                .sortedWith(Collator.getInstance()) // orden alfabético con tildes: "Único" junto a la U
-        }
         .distinctUntilChanged()
         .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val uiState: StateFlow<DealsUiState> = combine(
-        platformSource,
-        snapshotFlow { searchQuery },
-        _selectedGenres,
-        availableGenres,
-    ) { source, query, selected, genres ->
-        when (source) {
-            DealsSource.Loading -> DealsUiState.Loading
-            is DealsSource.Failed -> DealsUiState.Error(source.message)
-            is DealsSource.Loaded -> {
-                // Solo cuentan los elegidos que existen en la tienda actual: uno que desapareció tras una
-                // actualización (o al cambiar de tienda) se ignora en vez de dejar la lista vacía.
-                val activeGenres = selected.intersect(genres.toSet())
-                val needle = query.trim().normalizedForSearch()
-                val filtered = source.deals.filter { deal ->
-                    // OR: basta con que el juego tenga uno de los géneros elegidos.
-                    (activeGenres.isEmpty() || deal.genres.any { it in activeGenres }) &&
-                        (needle.isEmpty() || deal.title.normalizedForSearch().contains(needle))
-                }
-                DealsUiState.Success(
-                    deals = filtered,
-                    totalCount = source.deals.size,
-                    isFiltered = activeGenres.isNotEmpty() || needle.isNotEmpty(),
-                    platforms = source.platforms,
-                    isSearching = needle.isNotEmpty(),
-                    isFromCache = source.isFromCache,
-                )
-            }
+    init {
+        // Se busca al dejar de escribir, no en cada tecla: cada búsqueda es una consulta a Firestore.
+        // Vaciar el buscador sí responde al instante.
+        val search = snapshotFlow { searchQuery.trim() }
+            .distinctUntilChanged()
+            .debounce { if (it.isEmpty()) 0L else SEARCH_DEBOUNCE_MS }
+        val query = combine(_selectedPlatforms, _selectedGenres, search, availableGenres) { platforms, selected, text, genres ->
+            // Solo cuentan los elegidos que existen en las tiendas actuales: uno que desapareció tras una
+            // actualización (o al cambiar de tienda) se ignora en vez de dejar la lista vacía.
+            DealsQuery(
+                platforms = platforms.mapTo(HashSet()) { it.id },
+                genres = selected.intersect(genres.toSet()),
+                search = text,
+            )
+        }.distinctUntilChanged()
+        viewModelScope.launch {
+            // collectLatest: si los filtros cambian mientras llega una página, se cancela y se pide la de los nuevos.
+            combine(query, reloadTrigger) { q, _ -> q }.collectLatest(::loadFirstPage)
+        }
+    }
+
+    val uiState: StateFlow<DealsUiState> = combine(paging, lastRuns, repository.minuteTicker()) { p, runs, now ->
+        val query = p.query
+        when {
+            p.error != null -> DealsUiState.Error(p.error)
+            query == null -> DealsUiState.Loading
+            else -> DealsUiState.Success(
+                deals = p.items.filter { DealsRepository.isActive(it, now, runs[it.platform]) },
+                totalCount = p.totalCount,
+                filteredCount = p.filteredCount,
+                isFiltered = query.isFiltered,
+                query = query,
+                isInitialLoading = p.isInitialLoading,
+                isLoadingMore = p.isLoadingMore,
+                isLastPage = p.isLastPage,
+                loadMoreFailed = p.loadMoreFailed,
+                isFromCache = p.isFromCache,
+            )
         }
     }
         .flowOn(Dispatchers.Default) // el filtrado no corre en el hilo principal
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DealsUiState.Loading)
+
+    /** Reinicia la paginación: la lista anterior sigue visible (con [Paging.isInitialLoading]) hasta que llega esta. */
+    private suspend fun loadFirstPage(query: DealsQuery) {
+        loadMoreJob?.cancel()
+        paging.update { it.copy(isInitialLoading = true, isLoadingMore = false, loadMoreFailed = false, error = null) }
+        val (deals, page) = try {
+            fetchVisible(query, after = null)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            paging.update { it.copy(isInitialLoading = false, error = e.message ?: "Error desconocido") }
+            return
+        }
+        val previous = paging.value
+        paging.value = Paging(
+            query = query,
+            // Mismas tiendas: el total no cambia, así el contador no parpadea mientras se recalcula.
+            totalCount = previous.totalCount.takeIf { previous.query?.platforms == query.platforms },
+            items = deals,
+            cursor = page.cursor,
+            isLastPage = page.isLastPage,
+            isFromCache = page.isFromCache,
+            isInitialLoading = false,
+        )
+        // Después de mostrar la página: el contador no debe demorar la lista.
+        val (total, filtered) = coroutineScope {
+            val total = async { repository.countDeals(DealsQuery(platforms = query.platforms)) }
+            val filtered = async { if (query.isFiltered) repository.countDeals(query) else null }
+            total.await() to filtered.await()
+        }
+        paging.update { if (it.query == query) it.copy(totalCount = total, filteredCount = filtered) else it }
+    }
+
+    /**
+     * Pide la página siguiente; la llama la grilla al acercarse al final. No hace nada si ya hay una en camino,
+     * si se cargó todo o si la anterior falló (salvo [retry]: el botón "Reintentar").
+     */
+    fun loadNextPage(retry: Boolean = false) {
+        val current = paging.value
+        val query = current.query ?: return
+        if (current.isLastPage || current.isInitialLoading || current.isLoadingMore) return
+        if (current.loadMoreFailed && !retry) return
+        loadMoreJob = viewModelScope.launch {
+            paging.update { it.copy(isLoadingMore = true, loadMoreFailed = false) }
+            try {
+                val (deals, page) = fetchVisible(query, current.cursor)
+                paging.update {
+                    if (it.query != query) return@update it
+                    it.copy(
+                        // Un precio que cambió entre páginas puede mover una oferta a la siguiente: sin duplicados.
+                        items = (it.items + deals).distinctBy { deal -> deal.id },
+                        cursor = page.cursor,
+                        isLastPage = page.isLastPage,
+                        isFromCache = page.isFromCache,
+                        isLoadingMore = false,
+                    )
+                }
+            } catch (e: CancellationException) {
+                paging.update { it.copy(isLoadingMore = false) }
+                throw e
+            } catch (e: Exception) {
+                paging.update { it.copy(isLoadingMore = false, loadMoreFailed = true) }
+            }
+        }
+    }
+
+    /**
+     * Páginas desde [after] hasta juntar [MIN_VISIBLE_PER_LOAD] ofertas vigentes (o llegar al final). Una página
+     * puede quedar casi vacía tras los filtros del teléfono (vigencia, géneros o palabras que no van al
+     * servidor), y entonces la grilla no tendría con qué desplazarse para pedir la siguiente.
+     */
+    private suspend fun fetchVisible(query: DealsQuery, after: DocumentSnapshot?): Pair<List<Deal>, DealsPage> {
+        val deals = mutableListOf<Deal>()
+        var cursor = after
+        var page: DealsPage
+        var requests = 0
+        do {
+            page = repository.getDealsPage(query, cursor)
+            deals += page.deals
+            cursor = page.cursor
+            requests++
+            val now = System.currentTimeMillis()
+            val visible = deals.count { DealsRepository.isActive(it, now, lastRuns.value[it.platform]) }
+        } while (!page.isLastPage && visible < MIN_VISIBLE_PER_LOAD && requests < MAX_REQUESTS_PER_LOAD)
+        return deals to page
+    }
 
     fun onSearchQueryChange(query: String) {
         searchQuery = query
@@ -194,8 +281,8 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     }
 
     /**
-     * Firestore ya es tiempo real; refrescar recrea el listener (útil tras perder conexión) y mantiene
-     * el indicador visible un instante para que el gesto tenga respuesta visual.
+     * Vuelve a pedir la primera página (precios del día, o reintento tras un error) y mantiene el indicador
+     * visible un instante para que el gesto tenga respuesta visual.
      */
     fun refreshDeals() {
         if (_isRefreshing.value) return
@@ -208,14 +295,13 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     }
 
     companion object {
+        private const val SEARCH_DEBOUNCE_MS = 400L
+        private const val MIN_VISIBLE_PER_LOAD = 12
+        /** Tope de páginas por carga: con una búsqueda muy filtrada en el teléfono no se recorre toda la colección. */
+        private const val MAX_REQUESTS_PER_LOAD = 4
+
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer { DealsViewModel(DealsRepository()) }
         }
     }
 }
-
-/** Minúsculas y sin tildes: "pokemon" encuentra "Pokémon". */
-private fun String.normalizedForSearch(): String =
-    Normalizer.normalize(lowercase(), Normalizer.Form.NFD).replace(DIACRITICS, "")
-
-private val DIACRITICS = "\\p{Mn}+".toRegex()

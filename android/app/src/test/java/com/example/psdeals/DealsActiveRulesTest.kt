@@ -2,6 +2,7 @@ package com.example.psdeals
 
 import com.example.psdeals.data.DealsRepository
 import com.example.psdeals.model.Deal
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,10 +13,19 @@ class DealsActiveRulesTest {
     private val now = 1_800_000_000_000L
     private val lastRun = now - 2 * hour // la última ejecución completa de la tienda fue hace 2 h
 
-    private fun deal(lastSeenAt: Long?, endDate: Long? = null) = Deal(
+    private fun deal(lastSeenAt: Long?, endDate: Long? = null, active: Boolean? = null) = Deal(
         id = "x", title = "Juego", originalPriceText = "", discountedPriceText = "", discountPercent = 50,
-        imageUrl = null, productUrl = "https://example.com", lastSeenAt = lastSeenAt, endDate = endDate,
+        imageUrl = null, productUrl = "https://example.com", lastSeenAt = lastSeenAt, endDate = endDate, active = active,
     )
+
+    @Test fun `marcada inactiva por el backend se oculta aunque se haya visto hace poco`() =
+        assertFalse(DealsRepository.isActive(deal(lastSeenAt = lastRun, active = false), now, lastRun))
+
+    @Test fun `palabras de busqueda se normalizan igual que searchTokens del backend`() =
+        assertEquals(
+            listOf("marvels", "spider", "man", "2", "pokemon"),
+            DealsRepository.searchWords("Marvel's Spider-Man 2: Pokémon"),
+        )
 
     @Test fun `vista en la ultima ejecucion sigue vigente`() =
         assertTrue(DealsRepository.isActive(deal(lastSeenAt = lastRun - 10 * 60 * 1000), now, lastRun))

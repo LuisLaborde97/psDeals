@@ -5,12 +5,14 @@ import com.example.psdeals.model.Deal
 import com.example.psdeals.model.StorePlatform
 import com.google.firebase.Firebase
 import com.google.firebase.Timestamp
+import com.google.firebase.firestore.AggregateSource
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.MetadataChanges
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.Source
 import com.google.firebase.firestore.firestore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -18,25 +20,91 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.tasks.await
+import java.text.Normalizer
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
 
 /**
- * Ofertas vigentes para mostrar.
+ * Filtros de la lista principal. La base de la consulta (where + orderBy) sale de aquí y es la misma en
+ * todas las páginas; limit y startAfter solo la recorren.
+ * @param platforms ids de [StorePlatform]; vacío = todas.
+ * @param genres OR entre géneros; vacío = sin filtro.
+ */
+data class DealsQuery(
+    val platforms: Set<String> = emptySet(),
+    val genres: Set<String> = emptySet(),
+    val search: String = "",
+) {
+    val isFiltered: Boolean get() = genres.isNotEmpty() || DealsRepository.searchWords(search).isNotEmpty()
+}
+
+/**
+ * Una página de ofertas, ya filtrada por [DealsQuery] (aún sin las reglas de vigencia: ver [DealsRepository.isActive]).
+ * @param cursor último documento leído, para pedir la siguiente con startAfter; null si la página vino vacía.
  * @param isFromCache Firestore no pudo llegar al servidor y sirvió lo guardado en el teléfono: precios y
  *   vigencia pueden estar desactualizados.
  */
-data class DealsFeed(val deals: List<Deal>, val isFromCache: Boolean)
+data class DealsPage(
+    val deals: List<Deal>,
+    val cursor: DocumentSnapshot?,
+    val isLastPage: Boolean,
+    val isFromCache: Boolean,
+)
 
 class DealsRepository(
     private val db: FirebaseFirestore = Firebase.firestore,
 ) {
     /**
-     * Ofertas vigentes en tiempo real. Un listener ya prioriza el servidor (Source.DEFAULT es para get()):
-     * la caché solo se usa sin conexión, y entonces [DealsFeed.isFromCache] lo avisa. La vigencia se
-     * recalcula cada minuto para que una rebaja que vence con la app abierta desaparezca sola.
+     * Una página de [pageSize] ofertas, de mayor a menor descuento, después de [after] (null = la primera).
+     * get() y no un listener: un listener sobre la colección descargaba las 3.000 ofertas en cada apertura, y
+     * los precios cambian una vez al día. Source.DEFAULT pide al servidor y, sin conexión, responde con la
+     * caché ([DealsPage.isFromCache]).
      */
-    fun getDeals(): Flow<DealsFeed> = combine(observeAllDeals(), observeLastRuns(), minuteTicker()) { snapshot, lastRuns, now ->
-        DealsFeed(snapshot.deals.filter { isActive(it, now, lastRuns[it.platform]) }, snapshot.isFromCache)
+    suspend fun getDealsPage(query: DealsQuery, after: DocumentSnapshot? = null, pageSize: Long = PAGE_SIZE): DealsPage {
+        val plan = plan(query)
+        val firestoreQuery = plan.query.limit(pageSize).let { if (after != null) it.startAfter(after) else it }
+        val snapshot = firestoreQuery.get(Source.DEFAULT).await()
+        return DealsPage(
+            deals = snapshot.documents.mapNotNull { it.toDealOrNull() }.filter(plan.matches),
+            cursor = snapshot.documents.lastOrNull() ?: after,
+            isLastPage = snapshot.size() < pageSize,
+            isFromCache = snapshot.metadata.isFromCache,
+        )
+    }
+
+    /**
+     * Cuántas ofertas trae [query], contadas en el servidor (count() cobra 1 lectura por cada 1.000). null sin
+     * conexión, o si parte del filtro corre en el teléfono y el conteo del servidor no sería exacto.
+     */
+    suspend fun countDeals(query: DealsQuery): Int? {
+        val plan = plan(query)
+        if (plan.hasClientFilter) return null
+        return try {
+            plan.query.count().get(AggregateSource.SERVER).await().count.toInt()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudieron contar las ofertas", e)
+            null
+        }
+    }
+
+    /**
+     * `config/genres.byPlatform`: géneros de las ofertas de cada tienda (id de plataforma → géneros), escritos
+     * por el backend. Los chips ya no pueden salir de la lista, que llega por páginas.
+     */
+    fun observeGenres(): Flow<Map<String, List<String>>> = callbackFlow {
+        val registration = db.collection(CONFIG).document(GENRES_DOC).addSnapshotListener { snapshot, error ->
+            if (error != null) Log.w(TAG, "No se pudo leer config/$GENRES_DOC", error)
+            val genres = (snapshot?.get("byPlatform") as? Map<*, *>).orEmpty()
+                .mapNotNull { (platform, list) ->
+                    (platform as? String)?.let { p -> p to (list as? List<*>)?.filterIsInstance<String>().orEmpty() }
+                }
+                .toMap()
+            trySend(genres)
+        }
+        awaitClose { registration.remove() }
     }
 
     /**
@@ -78,24 +146,40 @@ class DealsRepository(
         awaitClose { registration.remove() }
     }
 
-    private data class Snapshot(val deals: List<Deal>, val isFromCache: Boolean)
-
-    private fun observeAllDeals(): Flow<Snapshot> = callbackFlow {
-        // INCLUDE: avisa también cuando cambia solo isFromCache (ej. vuelve la conexión con los mismos datos).
-        val registration = db.collection(COLLECTION)
-            .orderBy("discountPercent", Query.Direction.DESCENDING)
-            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
-                if (error != null) {
-                    close(error)
-                    return@addSnapshotListener
-                }
-                if (snapshot == null) return@addSnapshotListener
-                trySend(Snapshot(snapshot.documents.mapNotNull { it.toDealOrNull() }, snapshot.metadata.isFromCache))
-            }
-        awaitClose { registration.remove() }
+    /**
+     * Consulta de Firestore para [query] y la parte del filtro que no puede ir en ella ([matches]).
+     * Firestore admite un solo filtro de arreglo por consulta y hasta 30 combinaciones de in × array-contains-any:
+     * con búsqueda, el servidor filtra por su palabra más larga (la más selectiva) y los géneros y las demás
+     * palabras se revisan en el teléfono; sin búsqueda, los géneros van al servidor si caben.
+     * Cada combinación necesita su índice compuesto (firestore.indexes.json).
+     */
+    private fun plan(query: DealsQuery): QueryPlan {
+        var firestoreQuery: Query = db.collection(COLLECTION).whereEqualTo("active", true)
+        if (query.platforms.isNotEmpty()) firestoreQuery = firestoreQuery.whereIn("platform", query.platforms.toList())
+        val words = searchWords(query.search)
+        val serverWord = words.maxByOrNull { it.length }?.take(MAX_TOKEN_LENGTH)
+        val genresOnServer = serverWord == null && query.genres.isNotEmpty() &&
+            query.genres.size * max(1, query.platforms.size) <= MAX_DISJUNCTIONS
+        if (serverWord != null) {
+            firestoreQuery = firestoreQuery.whereArrayContains("searchTokens", serverWord)
+        } else if (genresOnServer) {
+            firestoreQuery = firestoreQuery.whereArrayContainsAny("genres", query.genres.toList())
+        }
+        val genresOnClient = query.genres.isNotEmpty() && !genresOnServer
+        val wordsOnClient = words.size > 1 || words.any { it.length > MAX_TOKEN_LENGTH }
+        return QueryPlan(
+            query = firestoreQuery.orderBy("discountPercent", Query.Direction.DESCENDING),
+            hasClientFilter = genresOnClient || wordsOnClient,
+        ) { deal ->
+            (!genresOnClient || deal.genres.any { it in query.genres }) &&
+                (!wordsOnClient || searchWords(deal.title).let { title -> words.all { w -> title.any { it.startsWith(w) } } })
+        }
     }
 
-    private fun minuteTicker(): Flow<Long> = flow {
+    private class QueryPlan(val query: Query, val hasClientFilter: Boolean, val matches: (Deal) -> Boolean)
+
+    /** Hora actual cada minuto: la vigencia se recalcula para que una rebaja que vence con la app abierta desaparezca sola. */
+    fun minuteTicker(): Flow<Long> = flow {
         while (true) {
             emit(System.currentTimeMillis())
             delay(TICK_MS)
@@ -128,6 +212,7 @@ class DealsRepository(
             storeUrl = storeUrl,
             // El backend la escribe en epoch millis; null si la tienda no la publica.
             endDate = (get("endDate") as? Number)?.toLong(),
+            active = getBoolean("active"),
         )
     }
 
@@ -136,6 +221,11 @@ class DealsRepository(
         private const val COLLECTION = "deals"
         private const val CONFIG = "config"
         private const val SCRAPER_DOC = "scraper"
+        private const val GENRES_DOC = "genres"
+        const val PAGE_SIZE = 50L
+        /** Igual que en el backend (searchTokens): prefijos de hasta 15 letras por palabra. */
+        private const val MAX_TOKEN_LENGTH = 15
+        private const val MAX_DISJUNCTIONS = 30
         private const val MAX_WHERE_IN = 30
         private val TICK_MS = TimeUnit.MINUTES.toMillis(1)
         // Respaldo si una tienda deja de ejecutarse: el cron es diario, 3 días toleran un par de fallos.
@@ -145,16 +235,34 @@ class DealsRepository(
 
         /**
          * El backend no borra las ofertas que terminan, así que la app decide si siguen vigentes:
+         * 0. el backend no la marcó inactiva (dejó de verla en una ejecución completa);
          * 1. su fecha de fin (si la tienda la publica) no pasó;
          * 2. apareció en la última ejecución completa de su tienda ([lastRunAt]): si no apareció, la
          *    tienda ya no la ofrece (antes seguía visible hasta 3 días);
          * 3. el scraper la vio en los últimos 3 días (respaldo si una tienda deja de ejecutarse).
          */
         fun isActive(deal: Deal, now: Long = System.currentTimeMillis(), lastRunAt: Long? = null): Boolean {
+            if (deal.active == false) return false
             if (deal.endDate != null && deal.endDate <= now) return false
             val seen = deal.lastSeenAt ?: return true // documentos antiguos sin el campo
             if (lastRunAt != null && seen < lastRunAt - RUN_MARGIN_MS) return false
             return seen >= now - STALE_AFTER_MS
         }
+
+        /**
+         * Palabras normalizadas igual que el backend al escribir searchTokens: minúsculas, sin tildes ni
+         * apóstrofos ("Marvel's Pokémon" → marvels, pokemon). Una búsqueda encuentra un título si cada una de
+         * sus palabras es el comienzo de alguna palabra del título.
+         */
+        fun searchWords(text: String): List<String> =
+            Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD)
+                .replace(DIACRITICS, "")
+                .replace(APOSTROPHES, "")
+                .split(NON_WORD)
+                .filter { it.isNotEmpty() }
+
+        private val DIACRITICS = "\\p{Mn}+".toRegex()
+        private val APOSTROPHES = "['’]".toRegex()
+        private val NON_WORD = "[^\\p{L}\\p{N}]+".toRegex()
     }
 }

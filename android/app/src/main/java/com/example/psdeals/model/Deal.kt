@@ -20,4 +20,6 @@ data class Deal(
     val storeUrl: String? = null,
     /** Fin de la rebaja (epoch millis) si la tienda lo publica; null si no (ej. PlayStation). */
     val endDate: Long? = null,
+    /** false: el backend ya no la vio en una ejecución completa de su tienda; null en documentos antiguos. */
+    val active: Boolean? = null,
 )

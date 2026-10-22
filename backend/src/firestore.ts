@@ -7,6 +7,8 @@ import type { Deal, Platform } from './types.js';
 const COLLECTION = 'deals';
 const MAX_BATCH_OPS = 450;
 const READ_CHUNK = 300;
+/** Prefijos por palabra para la búsqueda de la app; tope de largo (la app recorta igual su término). */
+const MAX_TOKEN_LENGTH = 15;
 export const PUSH_MIN_DISCOUNT = 50;
 
 /** backend/serviceAccountKey.json, válido tanto desde src/ (tsx) como desde dist/ (node). */
@@ -78,13 +80,22 @@ export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDe
           platform: deal.platform,
           storeUrl: deal.storeUrl,
           endDate: deal.endDate,
+          active: true,
+          searchTokens: searchTokens(deal.title),
           // Si la fase de géneros falló en esta ejecución, no se borran los que ya estaban guardados.
           ...(deal.genres.length > 0 && { genres: deal.genres }),
           updatedAt: now,
           lastSeenAt: now,
         });
       } else {
-        batch.set(ref, { ...deal, firstSeenAt: now, updatedAt: now, lastSeenAt: now });
+        batch.set(ref, {
+          ...deal,
+          active: true,
+          searchTokens: searchTokens(deal.title),
+          firstSeenAt: now,
+          updatedAt: now,
+          lastSeenAt: now,
+        });
         if (deal.discountPercent >= PUSH_MIN_DISCOUNT) newInChunk.push(deal);
       }
     }
@@ -119,6 +130,63 @@ export async function markPlatformsRun(platforms: Platform[]): Promise<void> {
   const lastRunAt = Object.fromEntries(platforms.map((p) => [p, FieldValue.serverTimestamp()]));
   await getFirestore().collection('config').doc('scraper').set({ lastRunAt }, { merge: true });
   console.log(`[firestore] config/scraper.lastRunAt actualizado: ${platforms.join(', ')}`);
+}
+
+/**
+ * Marca `active: false` las ofertas de [platforms] que esta ejecución no vio. La app pagina con
+ * `where('active', '==', true)`: sin esto cada página traería rebajas terminadas (el backend no borra
+ * documentos, la lista de deseos los sigue mostrando). Mismo criterio que markPlatformsRun: solo
+ * tiendas recorridas completas y guardadas sin lotes fallidos.
+ */
+export async function deactivateMissing(platforms: Platform[], savedIds: Set<string>): Promise<void> {
+  if (platforms.length === 0) return;
+  initFirebase();
+  const db = getFirestore();
+  // select() sin campos: solo hacen falta los IDs.
+  const snap = await db.collection(COLLECTION).where('active', '==', true).where('platform', 'in', platforms).select().get();
+  const missing = snap.docs.filter((doc) => !savedIds.has(doc.id));
+  for (let i = 0; i < missing.length; i += MAX_BATCH_OPS) {
+    const batch = db.batch();
+    for (const doc of missing.slice(i, i + MAX_BATCH_OPS)) batch.update(doc.ref, { active: false });
+    await batch.commit();
+  }
+  console.log(`[firestore] ${missing.length} ofertas terminadas marcadas inactivas (${platforms.join(', ')})`);
+}
+
+/**
+ * `config/genres.byPlatform.<tienda>`: géneros de las ofertas de esta ejecución. La app ya no descarga
+ * toda la colección, así que los chips de género salen de aquí. Merge por tienda: una ejecución con
+ * --platform, o una tienda sin géneros (falló esa fase o no los publica), no borra los de las demás.
+ */
+export async function saveGenres(deals: Deal[]): Promise<void> {
+  const byPlatform: Partial<Record<Platform, string[]>> = {};
+  for (const deal of deals) {
+    if (deal.genres.length === 0) continue;
+    byPlatform[deal.platform] = [...new Set([...(byPlatform[deal.platform] ?? []), ...deal.genres])];
+  }
+  if (Object.keys(byPlatform).length === 0) return;
+  initFirebase();
+  await getFirestore().collection('config').doc('genres').set({ byPlatform }, { merge: true });
+  console.log(`[firestore] config/genres actualizado: ${Object.keys(byPlatform).join(', ')}`);
+}
+
+/**
+ * Prefijos de cada palabra del título, normalizada igual que en la app (DealsRepository.searchWords):
+ * minúsculas, sin tildes ni apóstrofos. "Pokémon Scarlet" → p, po, …, pokemon, s, sc, …, scarlet.
+ */
+export function searchTokens(title: string): string[] {
+  const words = title
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Mn}+/gu, '')
+    .replace(/['’]/g, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  const tokens = new Set<string>();
+  for (const word of words) {
+    for (let len = 1; len <= Math.min(word.length, MAX_TOKEN_LENGTH); len++) tokens.add(word.slice(0, len));
+  }
+  return [...tokens];
 }
 
 async function fetchPrevious(db: Firestore, refs: DocumentReference[]): Promise<Map<string, PreviousDeal>> {

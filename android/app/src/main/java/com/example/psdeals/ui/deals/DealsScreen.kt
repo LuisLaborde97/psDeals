@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -75,6 +77,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -113,12 +117,16 @@ import com.example.psdeals.ui.account.AccountViewModel
 import com.example.psdeals.ui.account.rememberGoogleSignIn
 import com.example.psdeals.ui.theme.PSDealsTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 
 /** Rojo sobrio, llamativo sin ser chillón. Blanco encima = 4.97:1 (cumple WCAG AA para texto normal). */
 private val DiscountBadgeColor = Color(0xFFD62839)
 private const val SUPER_DEAL_THRESHOLD = 70
 private const val EXPIRED_ALPHA = 0.55f
 private const val DEAL_CARD_CONTENT_TYPE = "deal_card"
+/** Se pide la página siguiente cuando quedan menos de estas celdas por ver (unas 4 filas de 2). */
+private const val LOAD_MORE_THRESHOLD = 8
 /** Mínimo para guardar una búsqueda: con 1-2 letras casi siempre es una búsqueda a medio escribir. */
 private const val MIN_SEARCH_LENGTH = 3
 private const val SEARCH_RECORD_DELAY_MS = 1_500L
@@ -222,8 +230,7 @@ fun DealsScreen(
                             Text(stringResource(id = R.string.app_name), fontWeight = FontWeight.Bold)
                             (uiState as? DealsUiState.Success)?.let {
                                 Text(
-                                    if (it.isFiltered) "${it.deals.size} de ${it.totalCount} ofertas"
-                                    else "${it.totalCount} juegos en oferta",
+                                    dealsCountText(it),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -292,19 +299,26 @@ fun DealsScreen(
                             ErrorContent(message = state.message, onRetry = viewModel::refreshDeals)
                         }
                         state is DealsUiState.Success && state.deals.isNotEmpty() ->
-                            // Grilla nueva (y su scroll en 0) cuando llega la lista de otras tiendas, o al empezar o
-                            // vaciar una búsqueda. Reiniciar el LazyGridState al tocar no basta: la lista llega
-                            // después y la grilla conservaría a la vista el primer elemento anterior si existe en
-                            // la lista nueva. Mientras se escribe (texto → texto) la clave no cambia: la grilla no
-                            // se recrea en cada tecla.
-                            key(state.platforms, state.isSearching) {
+                            // Grilla nueva (y su scroll en 0) cuando llega la primera página de otros filtros.
+                            // Reiniciar el LazyGridState al tocar no basta: la lista llega después y la grilla
+                            // conservaría a la vista el primer elemento anterior si existe en la lista nueva. Las
+                            // páginas siguientes no cambian la clave: se agregan debajo sin mover el scroll.
+                            key(state.query) {
                                 DealsGrid(
                                     deals = state.deals,
                                     wishlist = account.wishlist,
                                     onToggleWishlist = accountViewModel::toggleWishlist,
                                     bottomInset = bottomInset,
+                                    paging = GridPaging(
+                                        isLoadingMore = state.isLoadingMore,
+                                        loadMoreFailed = state.loadMoreFailed,
+                                        onLoadMore = viewModel::loadNextPage,
+                                        onRetry = { viewModel.loadNextPage(retry = true) },
+                                    ),
                                 )
                             }
+                        state is DealsUiState.Success && state.isInitialLoading ->
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                         state is DealsUiState.Success && state.isFiltered -> ScrollableCentered {
                             NoMatchesContent(onClearFilters = viewModel::clearFilters)
                         }
@@ -314,6 +328,11 @@ fun DealsScreen(
                                 ?: if (selectedPlatforms.isEmpty()) "" else " en esas tiendas"
                             Text("No hay ofertas$store por ahora.\nVuelve mañana 🎮", textAlign = TextAlign.Center)
                         }
+                    }
+                    // Filtros nuevos en camino: la lista anterior queda a la vista con una barra sutil arriba (al
+                    // deslizar para refrescar ya se ve el indicador propio de PullToRefreshBox).
+                    if (state is DealsUiState.Success && state.isInitialLoading && state.deals.isNotEmpty() && !isRefreshing) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
                     }
                 }
             }
@@ -544,7 +563,21 @@ private fun SelectableChip(
     )
 }
 
-/** Compartida con WishlistScreen. @param isExpired marca ofertas terminadas (solo en la lista de deseos). */
+/**
+ * Carga por páginas de la grilla principal.
+ * @param onLoadMore se llama al acercarse al final; el ViewModel ignora las llamadas repetidas.
+ */
+class GridPaging(
+    val isLoadingMore: Boolean,
+    val loadMoreFailed: Boolean,
+    val onLoadMore: () -> Unit,
+    val onRetry: () -> Unit,
+)
+
+/**
+ * Compartida con WishlistScreen. @param isExpired marca ofertas terminadas (solo en la lista de deseos).
+ * @param paging null = lista completa (lista de deseos), sin carga al desplazarse.
+ */
 @Composable
 fun DealsGrid(
     deals: List<Deal>,
@@ -552,9 +585,27 @@ fun DealsGrid(
     onToggleWishlist: (String) -> Unit,
     bottomInset: Dp,
     isExpired: (Deal) -> Boolean = { false },
+    paging: GridPaging? = null,
 ) {
     val context = LocalContext.current
+    val gridState = rememberLazyGridState()
+    if (paging != null) {
+        val onLoadMore by rememberUpdatedState(paging.onLoadMore)
+        // Se reinicia al llegar una página (o terminar una carga sin ofertas nuevas): si el final sigue a la
+        // vista, la primera evaluación ya es true y se pide la siguiente sin esperar otro gesto.
+        LaunchedEffect(gridState, deals.size, paging.isLoadingMore) {
+            snapshotFlow {
+                val info = gridState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false
+                lastVisible >= info.totalItemsCount - LOAD_MORE_THRESHOLD
+            }
+                .distinctUntilChanged()
+                .filter { it }
+                .collect { onLoadMore() }
+        }
+    }
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(2),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -590,7 +641,29 @@ fun DealsGrid(
                 isExpired = expired,
             )
         }
+        if (paging != null && (paging.isLoadingMore || paging.loadMoreFailed)) {
+            item(key = "load_more", span = { GridItemSpan(maxLineSpan) }, contentType = "load_more") {
+                Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                    if (paging.loadMoreFailed) {
+                        TextButton(onClick = paging.onRetry) { Text("No se pudieron cargar más ofertas. Reintentar") }
+                    } else {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+            }
+        }
     }
+}
+
+/**
+ * Contador de la barra superior. Con filtros, el exacto del servidor; si no lo hay (sin conexión, o parte del
+ * filtro corre en el teléfono), las cargadas hasta ahora, con "+" mientras queden páginas.
+ */
+private fun dealsCountText(state: DealsUiState.Success): String {
+    val loaded = "${state.deals.size}${if (state.isLastPage) "" else "+"}"
+    if (!state.isFiltered) return "${state.totalCount ?: loaded} juegos en oferta"
+    val found = state.filteredCount ?: loaded
+    return if (state.totalCount != null) "$found de ${state.totalCount} ofertas" else "$found ofertas"
 }
 
 /**
