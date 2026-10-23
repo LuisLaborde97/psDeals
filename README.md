@@ -6,7 +6,7 @@
   <p>El rastreador definitivo de ofertas gamer multiplataforma para Android.</p>
 
   <!-- Reemplaza "TuUsuario" con tu nombre real de GitHub -->
-[![GitHub release](https://img.shields.io/github/v/release/LuisLaborde97/psDeals?color=blue)](https://github.com/LuisLaborde97/psDeals/releases)
+[![GitHub release](https://img.shields.io/github/v/release/LuisLaborde97/psDeals?include_prereleases&color=blue)](https://github.com/LuisLaborde97/psDeals/releases)
 [![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
 [![License](https://img.shields.io/github/license/LuisLaborde97/psDeals?color=blue)](https://github.com/LuisLaborde97/psDeals/blob/main/LICENSE)
 </div>
