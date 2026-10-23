@@ -110,6 +110,7 @@ import coil3.compose.AsyncImage
 import com.example.psdeals.R
 import com.example.psdeals.model.Deal
 import com.example.psdeals.model.StorePlatform
+import com.example.psdeals.analytics.DealAnalytics
 import com.example.psdeals.ui.openStoreUrl
 import com.example.psdeals.ui.account.AccountButton
 import com.example.psdeals.ui.account.AccountDialog
@@ -634,7 +635,10 @@ fun DealsGrid(
             val expired = isExpired(deal)
             DealCard(
                 deal = deal,
-                onClick = { context.openStoreUrl(deal.storeUrl ?: deal.productUrl) },
+                onClick = {
+                    DealAnalytics.logStoreClick(deal)
+                    context.openStoreUrl(deal.storeUrl ?: deal.productUrl)
+                },
                 isWishlisted = deal.id in wishlist,
                 onToggleWishlist = { onToggleWishlist(deal.id) },
                 onShare = { shareDeal(context, deal, expired) },

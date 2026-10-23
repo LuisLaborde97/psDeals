@@ -65,6 +65,8 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.messaging)
     implementation(libs.firebase.auth)
+    // Eventos de interés (DealAnalytics): van a Google Analytics, no a Firestore.
+    implementation(libs.firebase.analytics)
     // Login con Google vía Credential Manager: reemplaza al GoogleSignIn obsoleto de play-services-auth;
     // credentials-play-services-auth es el puente con Play Services en Android 13 y anteriores.
     implementation(libs.androidx.credentials)
