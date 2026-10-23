@@ -43,6 +43,11 @@ class UserProfileRepository(
         }.await()
     }
 
+    /** Borra `users/{uid}`: lista de deseos, historial de búsqueda y tokens de notificación. */
+    suspend fun deleteProfile(uid: String) {
+        doc(uid).delete().await()
+    }
+
     suspend fun getProfile(uid: String): UserProfile? = doc(uid).get().await().toUserProfileOrNull()
 
     /** Emite el perfil en tiempo real; null si aún no existe. */

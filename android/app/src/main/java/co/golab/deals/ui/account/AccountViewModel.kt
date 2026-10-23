@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import co.golab.deals.PSDealsApp
 import co.golab.deals.data.SessionUser
 import co.golab.deals.data.UserSession
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +28,7 @@ data class AccountUiState(
     /** Búsquedas recientes, la más reciente primero. */
     val searchHistory: List<String> = emptyList(),
     val isSigningIn: Boolean = false,
+    val isDeletingAccount: Boolean = false,
 ) {
     val isSignedInWithGoogle: Boolean get() = user != null && !user.isAnonymous
 }
@@ -34,6 +36,7 @@ data class AccountUiState(
 class AccountViewModel(private val session: UserSession) : ViewModel() {
 
     private val isSigningIn = MutableStateFlow(false)
+    private val isDeletingAccount = MutableStateFlow(false)
 
     /** Mensajes de una sola vez para el Snackbar (Channel: no se repiten al rotar). */
     private val _messages = Channel<String>(Channel.BUFFERED)
@@ -41,12 +44,18 @@ class AccountViewModel(private val session: UserSession) : ViewModel() {
 
     // La wishlist sale del snapshot de Firestore, que ya refleja las escrituras locales al instante:
     // el corazón cambia sin esperar al servidor, sin estado optimista propio.
-    val uiState: StateFlow<AccountUiState> = combine(session.sessionUser, session.profile, isSigningIn) { user, profile, signingIn ->
+    val uiState: StateFlow<AccountUiState> = combine(
+        session.sessionUser,
+        session.profile,
+        isSigningIn,
+        isDeletingAccount,
+    ) { user, profile, signingIn, deleting ->
         AccountUiState(
             user = user,
             wishlist = profile?.wishlist.orEmpty().toSet(),
             searchHistory = profile?.searchHistory.orEmpty(),
             isSigningIn = signingIn,
+            isDeletingAccount = deleting,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AccountUiState())
 
@@ -96,6 +105,24 @@ class AccountViewModel(private val session: UserSession) : ViewModel() {
             runCatching { session.signOut() }
                 .onSuccess { _messages.send("Sesión cerrada") }
                 .onFailure { Log.w(TAG, "Fallo al cerrar sesión", it) }
+        }
+    }
+
+    /** @param idToken token de Google recién pedido por la UI: confirma que es el dueño de la cuenta. */
+    fun deleteAccount(idToken: String) {
+        if (isDeletingAccount.value) return
+        viewModelScope.launch {
+            isDeletingAccount.value = true
+            runCatching { session.deleteAccount(idToken) }
+                .onSuccess { _messages.send("Tu cuenta y tus datos se eliminaron") }
+                .onFailure {
+                    Log.w(TAG, "Fallo al eliminar la cuenta", it)
+                    _messages.send(
+                        if (it is FirebaseAuthInvalidUserException) "Elige la misma cuenta de Google con la que entraste"
+                        else "No se pudo eliminar la cuenta. Revisa tu conexión e inténtalo de nuevo",
+                    )
+                }
+            isDeletingAccount.value = false
         }
     }
 

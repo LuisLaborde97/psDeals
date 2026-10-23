@@ -172,6 +172,21 @@ class UserSession(
         return start()
     }
 
+    /**
+     * Elimina la cuenta (requisito de Google Play): confirma la identidad con [idToken], borra el perfil
+     * `users/{uid}` y después el usuario de Firebase Auth. En ese orden porque las reglas solo dejan borrar
+     * el perfil a su dueño con sesión iniciada. Termina en un usuario anónimo nuevo, como al cerrar sesión.
+     */
+    suspend fun deleteAccount(idToken: String): FirebaseUser {
+        val user = auth.reauthenticateWithGoogle(idToken)
+        // El token de FCM se va con el perfil: solo se olvida la copia local para no intentar quitarlo después.
+        tokenMutex.withLock { pushTokens.clear() }
+        profileReady = false
+        profiles.deleteProfile(user.uid)
+        auth.deleteCurrentUser()
+        return start()
+    }
+
     private fun FirebaseUser.toSessionUser(): SessionUser {
         // providerData de Google se actualiza en cada inicio de sesión; los campos de FirebaseUser no.
         val google = providerData.firstOrNull { it.providerId == GoogleAuthProvider.PROVIDER_ID }

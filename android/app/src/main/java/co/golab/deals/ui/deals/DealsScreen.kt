@@ -115,6 +115,7 @@ import co.golab.deals.ui.openStoreUrl
 import co.golab.deals.ui.account.AccountButton
 import co.golab.deals.ui.account.AccountDialog
 import co.golab.deals.ui.account.AccountViewModel
+import co.golab.deals.ui.account.rememberGoogleIdTokenRequest
 import co.golab.deals.ui.account.rememberGoogleSignIn
 import co.golab.deals.ui.theme.PSDealsTheme
 import kotlinx.coroutines.delay
@@ -179,8 +180,18 @@ fun DealsScreen(
     )
 
     if (showCurrencyInfo) CurrencyInfoDialog(onDismiss = { showCurrencyInfo = false })
+    // Eliminar la cuenta vuelve a pedir el token de Google: Firebase exige un inicio de sesión reciente.
+    val onDeleteAccount = rememberGoogleIdTokenRequest(
+        onIdToken = accountViewModel::deleteAccount,
+        onError = accountViewModel::showMessage,
+    )
     if (showAccount && account.isSignedInWithGoogle) {
-        AccountDialog(account = account, onSignOut = accountViewModel::signOut, onDismiss = { showAccount = false })
+        AccountDialog(
+            account = account,
+            onSignOut = accountViewModel::signOut,
+            onDeleteAccount = onDeleteAccount,
+            onDismiss = { showAccount = false },
+        )
     }
 
     // Búsqueda reciente: se guarda cuando el usuario deja de escribir 1,5 s (o pulsa "Buscar"), no en

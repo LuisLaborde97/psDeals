@@ -4,12 +4,15 @@ import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,9 +21,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,28 +66,37 @@ fun rememberGoogleSignIn(
     onError: (String) -> Unit,
     onShowAccount: () -> Unit,
 ): () -> Unit {
+    val requestIdToken = rememberGoogleIdTokenRequest(onIdToken = onIdToken, onError = onError)
+    val signedIn by rememberUpdatedState(isSignedInWithGoogle)
+    val showAccount by rememberUpdatedState(onShowAccount)
+    return remember(requestIdToken) { { if (signedIn) showAccount() else requestIdToken() } }
+}
+
+/**
+ * Abre la hoja "Continuar con Google" y entrega el ID token. La usan el inicio de sesión y la eliminación
+ * de cuenta, que vuelve a pedirlo para confirmar la identidad antes de borrar.
+ */
+@Composable
+fun rememberGoogleIdTokenRequest(onIdToken: (String) -> Unit, onError: (String) -> Unit): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val tokenProvider = remember { GoogleIdTokenProvider() }
     // Generado por el plugin de google-services a partir del cliente OAuth "Web" de google-services.json.
     val webClientId = stringResource(R.string.default_web_client_id)
-    val signedIn by rememberUpdatedState(isSignedInWithGoogle)
+    val currentOnIdToken by rememberUpdatedState(onIdToken)
+    val currentOnError by rememberUpdatedState(onError)
     return remember(context, scope, webClientId) {
         {
-            if (signedIn) {
-                onShowAccount()
-            } else {
-                scope.launch {
-                    try {
-                        onIdToken(tokenProvider.requestIdToken(context, webClientId))
-                    } catch (e: GetCredentialCancellationException) {
-                        // El usuario cerró la hoja: no hay nada que avisar.
-                    } catch (e: NoGoogleAccountException) {
-                        onError("Agrega una cuenta de Google en los ajustes del teléfono")
-                    } catch (e: GetCredentialException) {
-                        Log.w(TAG, "Credential Manager falló", e)
-                        onError("No se pudo abrir el inicio de sesión de Google")
-                    }
+            scope.launch {
+                try {
+                    currentOnIdToken(tokenProvider.requestIdToken(context, webClientId))
+                } catch (e: GetCredentialCancellationException) {
+                    // El usuario cerró la hoja: no hay nada que avisar.
+                } catch (e: NoGoogleAccountException) {
+                    currentOnError("Agrega una cuenta de Google en los ajustes del teléfono")
+                } catch (e: GetCredentialException) {
+                    Log.w(TAG, "Credential Manager falló", e)
+                    currentOnError("No se pudo abrir el inicio de sesión de Google")
                 }
             }
         }
@@ -151,11 +165,26 @@ private fun UserAvatar(user: SessionUser, size: Dp, modifier: Modifier = Modifie
     }
 }
 
-/** Resumen de la cuenta vinculada; mismo estilo que el diálogo de monedas. */
+/**
+ * Resumen de la cuenta vinculada; mismo estilo que el diálogo de monedas.
+ * @param onDeleteAccount se llama tras confirmar; debe volver a pedir el token de Google (ver
+ *   [rememberGoogleIdTokenRequest]). Al terminar la sesión pasa a anónima y quien lo muestra lo cierra.
+ */
 @Composable
-fun AccountDialog(account: AccountUiState, onSignOut: () -> Unit, onDismiss: () -> Unit) {
+fun AccountDialog(account: AccountUiState, onSignOut: () -> Unit, onDeleteAccount: () -> Unit, onDismiss: () -> Unit) {
     val user = account.user ?: return
     val count = account.wishlist.size
+    var confirmingDelete by remember { mutableStateOf(false) }
+    if (confirmingDelete) {
+        DeleteAccountDialog(
+            onConfirm = {
+                confirmingDelete = false
+                onDeleteAccount()
+            },
+            onDismiss = { confirmingDelete = false },
+        )
+        return
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { UserAvatar(user = user, size = 56.dp) },
@@ -174,6 +203,22 @@ fun AccountDialog(account: AccountUiState, onSignOut: () -> Unit, onDismiss: () 
                     "Tu lista se guarda en tu cuenta de Google y te acompaña si cambias de teléfono.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                Spacer(Modifier.height(16.dp))
+                // Requisito de Google Play: la cuenta debe poder eliminarse desde la propia app.
+                TextButton(
+                    onClick = { confirmingDelete = true },
+                    enabled = !account.isDeletingAccount,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    contentPadding = PaddingValues(horizontal = 0.dp),
+                ) {
+                    if (account.isDeletingAccount) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Eliminando cuenta…")
+                    } else {
+                        Text("Eliminar cuenta")
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
@@ -188,6 +233,32 @@ fun AccountDialog(account: AccountUiState, onSignOut: () -> Unit, onDismiss: () 
         shape = RoundedCornerShape(24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         iconContentColor = MaterialTheme.colorScheme.primary,
+        titleContentColor = MaterialTheme.colorScheme.onSurface,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** Confirmación antes de borrar: la acción no se puede deshacer. */
+@Composable
+private fun DeleteAccountDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("¿Eliminar tu cuenta?") },
+        text = {
+            Text(
+                "Se borrarán tu lista de deseos, tu historial de búsqueda y los datos de tu cuenta de Google en " +
+                    "GoLab Deals. Esta acción no se puede deshacer.\n\nPara confirmar, elige tu cuenta de Google.",
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Eliminar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     )

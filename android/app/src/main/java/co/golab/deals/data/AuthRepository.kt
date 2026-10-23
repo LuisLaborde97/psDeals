@@ -99,6 +99,23 @@ class AuthRepository(
         return user
     }
 
+    /**
+     * Confirma la identidad con un token de Google recién pedido. Firebase exige un inicio de sesión reciente
+     * para borrar la cuenta (si no, lanza FirebaseAuthRecentLoginRequiredException); pedirlo siempre, en vez
+     * de esperar ese error, hace que el usuario confirme con su cuenta antes de una acción irreversible.
+     * @throws com.google.firebase.auth.FirebaseAuthInvalidUserException si eligió otra cuenta de Google.
+     */
+    suspend fun reauthenticateWithGoogle(idToken: String): FirebaseUser {
+        val user = auth.currentUser ?: error("No hay sesión que confirmar")
+        user.reauthenticate(GoogleAuthProvider.getCredential(idToken, null)).await()
+        return user
+    }
+
+    /** Borra el usuario de Firebase Authentication (con su nombre, correo y foto de Google) y cierra la sesión. */
+    suspend fun deleteCurrentUser() {
+        auth.currentUser?.delete()?.await()
+    }
+
     /** Cierra la sesión; el siguiente ensureSignedIn() creará un usuario anónimo nuevo. */
     fun signOut() = auth.signOut()
 }
