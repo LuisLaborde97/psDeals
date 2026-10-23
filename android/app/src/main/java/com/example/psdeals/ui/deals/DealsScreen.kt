@@ -133,7 +133,7 @@ private const val MIN_SEARCH_LENGTH = 3
 private const val SEARCH_RECORD_DELAY_MS = 1_500L
 private const val OFFLINE_NOTICE_DELAY_MS = 3_000L
 /** Rosa coral: distinto del rojo del descuento para que el corazón no se confunda con la insignia. */
-private val WishlistColor = Color(0xFFFF5C7A)
+internal val WishlistColor = Color(0xFFFF5C7A)
 
 // Modo oscuro: grafito con un leve tinte azul arriba → negro casi puro abajo. Neutro para no competir con las portadas.
 private val DarkGradient = listOf(Color(0xFF1C1C24), Color(0xFF121216), Color(0xFF09090B))
@@ -590,6 +590,9 @@ fun DealsGrid(
 ) {
     val context = LocalContext.current
     val gridState = rememberLazyGridState()
+    // Oferta abierta en el panel de detalle. Se guarda el ID (sobrevive a la rotación) y se busca en [deals]:
+    // así el panel refleja precio y estado actuales, y se cierra solo si la oferta sale de la lista.
+    var openDealId by rememberSaveable { mutableStateOf<String?>(null) }
     if (paging != null) {
         val onLoadMore by rememberUpdatedState(paging.onLoadMore)
         // Se reinicia al llegar una página (o terminar una carga sin ofertas nuevas): si el final sigue a la
@@ -636,8 +639,9 @@ fun DealsGrid(
             DealCard(
                 deal = deal,
                 onClick = {
-                    DealAnalytics.logStoreClick(deal)
-                    context.openStoreUrl(deal.storeUrl ?: deal.productUrl)
+                    // Aquí y no dentro del panel: un LaunchedEffect volvería a contarla al rotar la pantalla.
+                    DealAnalytics.logDealOpened(deal)
+                    openDealId = deal.id
                 },
                 isWishlisted = deal.id in wishlist,
                 onToggleWishlist = { onToggleWishlist(deal.id) },
@@ -656,6 +660,24 @@ fun DealsGrid(
                 }
             }
         }
+    }
+
+    // Fuera de la grilla: el panel es su propia ventana, así que no toca gridState ni el LaunchedEffect de
+    // paginación; las páginas siguen llegando y agregándose detrás mientras está abierto.
+    deals.firstOrNull { it.id == openDealId }?.let { deal ->
+        val expired = isExpired(deal)
+        DealDetailSheet(
+            deal = deal,
+            isExpired = expired,
+            isWishlisted = deal.id in wishlist,
+            onToggleWishlist = { onToggleWishlist(deal.id) },
+            onShare = { shareDeal(context, deal, expired) },
+            onGoToStore = {
+                DealAnalytics.logStoreClick(deal)
+                context.openStoreUrl(deal.storeUrl ?: deal.productUrl)
+            },
+            onDismiss = { openDealId = null },
+        )
     }
 }
 
@@ -793,7 +815,7 @@ fun DealCard(
 }
 
 @Composable
-private fun DiscountBadge(percent: Int, modifier: Modifier = Modifier) {
+internal fun DiscountBadge(percent: Int, modifier: Modifier = Modifier) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -815,7 +837,7 @@ private fun DiscountBadge(percent: Int, modifier: Modifier = Modifier) {
  * Color de marca para el chip seleccionado. Todos dan ≥ 7:1 (WCAG AAA) con texto blanco; por eso
  * PlayStation y Xbox usan tonos más oscuros que sus colores insignia (#0070D1 = 4.95:1, #107C10 = 5.37:1).
  */
-private val StorePlatform.brandColor: Color
+internal val StorePlatform.brandColor: Color
     get() = when (this) {
         StorePlatform.PLAYSTATION -> Color(0xFF00439C) // 9.20:1
         StorePlatform.STEAM -> Color(0xFF2A475E) // 9.72:1
@@ -825,7 +847,7 @@ private val StorePlatform.brandColor: Color
 
 /** Logo de la tienda (res/drawable). Vive en la UI para que el modelo no dependa de recursos de Android. */
 @get:DrawableRes
-private val StorePlatform.iconRes: Int
+internal val StorePlatform.iconRes: Int
     get() = when (this) {
         StorePlatform.PLAYSTATION -> R.drawable.ic_playstation
         StorePlatform.STEAM -> R.drawable.ic_steam
@@ -885,7 +907,7 @@ private fun OfflineNotice(isFromCache: Boolean) {
 
 /** Sustituye al % de descuento cuando la rebaja ya terminó. */
 @Composable
-private fun ExpiredBadge(modifier: Modifier = Modifier) {
+internal fun ExpiredBadge(modifier: Modifier = Modifier) {
     Text(
         text = "Oferta terminada",
         color = Color.White,
@@ -1006,18 +1028,23 @@ private fun ScrollableCentered(content: @Composable () -> Unit) {
  * antes tiene que descargar y decodificar el archivo entero: con una portada de 3 MB eso cuesta CPU y
  * memoria justo durante el primer scroll. Xbox ya llega con `?w=440` desde el backend; Steam e ITAD
  * sirven portadas de ~50 KB.
+ * @param width ancho pedido en px: el de la tarjeta por defecto; el panel de detalle pide más.
  */
-private fun resized(url: String): String = when {
+internal fun resized(url: String, width: Int = CARD_IMAGE_WIDTH): String = when {
+    // Xbox: el backend ya pide ?w=440; para otro ancho se reemplaza.
+    url.endsWith("?w=$CARD_IMAGE_WIDTH") -> url.removeSuffix("$CARD_IMAGE_WIDTH") + width
     url.contains('?') && !url.contains("cdn1.epicgames.com") -> url
     // `?w=`: ~15-60 KB en vez de ~800 KB.
-    url.contains("image.api.playstation.com") -> "$url?w=440"
+    url.contains("image.api.playstation.com") -> "$url?w=$width"
     // Portadas oficiales de Epic: 0,4-3,3 MB originales → 24-59 KB. resize=1 conserva la proporción.
-    url.contains("cdn1.epicgames.com") -> url + (if (url.contains('?')) "&" else "?") + "resize=1&w=480&h=720"
+    url.contains("cdn1.epicgames.com") -> url + (if (url.contains('?')) "&" else "?") + "resize=1&w=$width&h=${width * 3 / 2}"
     else -> url
 }
 
+private const val CARD_IMAGE_WIDTH = 440
+
 /** Hoja de compartir del sistema con un texto listo para WhatsApp, Telegram, etc. */
-private fun shareDeal(context: Context, deal: Deal, isExpired: Boolean) {
+internal fun shareDeal(context: Context, deal: Deal, isExpired: Boolean) {
     val store = StorePlatform.fromId(deal.platform)?.label ?: deal.platform
     val url = deal.storeUrl ?: deal.productUrl
     val text = when {

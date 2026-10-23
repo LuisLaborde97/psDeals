@@ -17,7 +17,7 @@ object DealAnalytics {
     /** Analytics descarta los valores de texto de más de 100 caracteres. */
     private const val MAX_PARAM_LENGTH = 100
 
-    /** El usuario abrió el detalle de una oferta (todavía sin disparador: la app no tiene pantalla de detalle). */
+    /** El usuario abrió el detalle de una oferta. */
     fun logDealOpened(deal: Deal) = log(EVENT_DEAL_OPENED, deal)
 
     /** El usuario salió hacia la tienda de la oferta: la señal más cercana a una intención de compra. */
