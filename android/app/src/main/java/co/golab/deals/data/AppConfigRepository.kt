@@ -10,7 +10,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.firestore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.retryWhen
 
 /**
  * Configuración remota de la app en la colección `config` (de solo lectura para la app; ver firestore.rules).
@@ -27,15 +29,19 @@ class AppConfigRepository(
     fun observeUpdate(): Flow<AppUpdate?> = callbackFlow {
         val registration = db.collection(COLLECTION).document(UPDATE_DOC).addSnapshotListener { snapshot, error ->
             if (error != null) {
-                // Ej. PERMISSION_DENIED si las reglas aún no permiten leer `config`.
+                // Ej. RESOURCE_EXHAUSTED (cuota diaria agotada) o PERMISSION_DENIED. Firestore da por terminado el
+                // listener tras un error: retryWhen lo vuelve a crear, si no el aviso no aparecía hasta reiniciar la app.
                 Log.w(TAG, "No se pudo leer config/$UPDATE_DOC", error)
-                trySend(null)
-                close()
+                close(error)
                 return@addSnapshotListener
             }
             trySend(snapshot?.toAppUpdateOrNull())
         }
         awaitClose { registration.remove() }
+    }.retryWhen { _, attempt ->
+        emit(null) // mientras tanto, sin aviso: un fallo aquí nunca debe impedir usar la app
+        delay(minOf(RETRY_BASE_MS shl attempt.toInt().coerceAtMost(4), RETRY_MAX_MS))
+        true
     }
 
     /** Mapeo manual y tolerante, como en DealsRepository: un documento mal escrito en la consola se ignora. */
@@ -60,6 +66,9 @@ class AppConfigRepository(
     private companion object {
         const val TAG = "AppConfigRepository"
         const val COLLECTION = "config"
+        /** Reintentos a 30 s, 1, 2, 4 y luego cada 8 min. */
+        const val RETRY_BASE_MS = 30_000L
+        const val RETRY_MAX_MS = 8 * 60_000L
 
         /**
          * Las compilaciones debug leen su propio documento: así se puede probar el aviso (incluso uno
