@@ -104,6 +104,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
@@ -112,6 +114,8 @@ import co.golab.deals.model.Deal
 import co.golab.deals.model.StorePlatform
 import co.golab.deals.analytics.DealAnalytics
 import co.golab.deals.ui.openStoreUrl
+import co.golab.deals.notifications.BatteryOptimizationHelper
+import co.golab.deals.ui.BatteryOptimizationDialog
 import co.golab.deals.ui.account.AccountButton
 import co.golab.deals.ui.account.AccountDialog
 import co.golab.deals.ui.account.AccountViewModel
@@ -179,7 +183,37 @@ fun DealsScreen(
         onShowAccount = { showAccount = true },
     )
 
-    if (showCurrencyInfo) CurrencyInfoDialog(onDismiss = { showCurrencyInfo = false })
+    // Aviso de batería: una sola vez, con la lista ya en pantalla y solo si las notificaciones están permitidas (sin
+    // ellas no sirve). Se revisa al volver a primer plano: así aparece justo después de conceder el permiso.
+    val context = LocalContext.current
+    var showBatteryDialog by rememberSaveable { mutableStateOf(false) }
+    LifecycleResumeEffect(isReady) {
+        if (isReady && NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            BatteryOptimizationHelper.shouldShowPrompt(context)
+        ) {
+            showBatteryDialog = true
+        }
+        onPauseOrDispose {}
+    }
+    if (showCurrencyInfo) {
+        CurrencyInfoDialog(
+            onBatterySettings = {
+                showCurrencyInfo = false
+                showBatteryDialog = true
+            },
+            onDismiss = { showCurrencyInfo = false },
+        )
+    }
+    if (showBatteryDialog) {
+        BatteryOptimizationDialog(
+            onDismiss = {
+                // Cuenta como visto al responderlo, no al mostrarlo: si la app se abrió con la pantalla bloqueada o
+                // se cerró antes de leerlo, se vuelve a mostrar.
+                BatteryOptimizationHelper.markPromptShown(context)
+                showBatteryDialog = false
+            },
+        )
+    }
     // Eliminar la cuenta vuelve a pedir el token de Google: Firebase exige un inicio de sesión reciente.
     val onDeleteAccount = rememberGoogleIdTokenRequest(
         onIdToken = accountViewModel::deleteAccount,
@@ -190,6 +224,10 @@ fun DealsScreen(
             account = account,
             onSignOut = accountViewModel::signOut,
             onDeleteAccount = onDeleteAccount,
+            onBatterySettings = {
+                showAccount = false
+                showBatteryDialog = true
+            },
             onDismiss = { showAccount = false },
         )
     }
@@ -959,7 +997,8 @@ private fun PulsingFire() {
  * grilla de portadas un diálogo translúcido sería ilegible.
  */
 @Composable
-private fun CurrencyInfoDialog(onDismiss: () -> Unit) {
+/** @param onBatterySettings abre el aviso de batería: es el único acceso para quien no inició sesión. */
+private fun CurrencyInfoDialog(onBatterySettings: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(painterResource(R.drawable.ic_info), contentDescription = null) },
@@ -979,6 +1018,7 @@ private fun CurrencyInfoDialog(onDismiss: () -> Unit) {
             )
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Entendido") } },
+        dismissButton = { TextButton(onClick = onBatterySettings) { Text("Alertas a tiempo") } },
         shape = RoundedCornerShape(24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         iconContentColor = MaterialTheme.colorScheme.primary,

@@ -50,6 +50,7 @@ import co.golab.deals.R
 import co.golab.deals.data.GoogleIdTokenProvider
 import co.golab.deals.data.NoGoogleAccountException
 import co.golab.deals.data.SessionUser
+import co.golab.deals.notifications.BatteryOptimizationHelper
 import kotlinx.coroutines.launch
 
 private const val TAG = "AccountComponents"
@@ -169,12 +170,22 @@ private fun UserAvatar(user: SessionUser, size: Dp, modifier: Modifier = Modifie
  * Resumen de la cuenta vinculada; mismo estilo que el diálogo de monedas.
  * @param onDeleteAccount se llama tras confirmar; debe volver a pedir el token de Google (ver
  *   [rememberGoogleIdTokenRequest]). Al terminar la sesión pasa a anónima y quien lo muestra lo cierra.
+ * @param onBatterySettings vuelve a abrir el aviso de batería (que lleva a Ajustes).
  */
 @Composable
-fun AccountDialog(account: AccountUiState, onSignOut: () -> Unit, onDeleteAccount: () -> Unit, onDismiss: () -> Unit) {
+fun AccountDialog(
+    account: AccountUiState,
+    onSignOut: () -> Unit,
+    onDeleteAccount: () -> Unit,
+    onBatterySettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val user = account.user ?: return
     val count = account.wishlist.size
     var confirmingDelete by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    // Se lee al abrir el diálogo: si el usuario vuelve de Ajustes, el diálogo ya se cerró y al reabrirlo se relee.
+    val batteryUnrestricted = remember { BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context) }
     if (confirmingDelete) {
         DeleteAccountDialog(
             onConfirm = {
@@ -204,6 +215,11 @@ fun AccountDialog(account: AccountUiState, onSignOut: () -> Unit, onDeleteAccoun
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onBatterySettings, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Icon(painterResource(R.drawable.ic_notification), contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (batteryUnrestricted) "Alertas en segundo plano: sin restricciones" else "Recibir alertas a tiempo (batería)")
+                }
                 // Requisito de Google Play: la cuenta debe poder eliminarse desde la propia app.
                 TextButton(
                     onClick = { confirmingDelete = true },
