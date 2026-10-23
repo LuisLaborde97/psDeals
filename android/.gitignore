@@ -16,3 +16,6 @@ google-services.json
 # Claves de firma
 *.jks
 *.keystore
+
+# Datos de la clave de subida (ver key.properties.example)
+key.properties

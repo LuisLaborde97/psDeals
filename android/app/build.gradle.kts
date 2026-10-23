@@ -1,8 +1,21 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.services)
 }
+
+/**
+ * Clave de subida a Google Play: android/key.properties (fuera de git, ver key.properties.example) o, en CI,
+ * variables de entorno GOLAB_KEYSTORE_FILE, GOLAB_KEYSTORE_PASSWORD, GOLAB_KEY_ALIAS y GOLAB_KEY_PASSWORD.
+ */
+val keyProperties = Properties().apply {
+    rootProject.file("key.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+}
+fun signingValue(property: String, env: String): String? =
+    keyProperties.getProperty(property)?.takeIf { it.isNotBlank() } ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+val releaseKeystore = signingValue("storeFile", "GOLAB_KEYSTORE_FILE")
 
 android {
     namespace = "co.golab.deals"
@@ -22,12 +35,30 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            if (releaseKeystore != null) {
+                storeFile = rootProject.file(releaseKeystore) // relativa a android/, o absoluta
+                storePassword = signingValue("storePassword", "GOLAB_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "GOLAB_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "GOLAB_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TEMPORAL, solo para pruebas de rendimiento: firma con la clave debug (~/.android/debug.keystore),
-            // así se instala encima del APK debug sin configurar una clave de producción. Antes de publicar en
-            // Play Store hay que reemplazarla por una clave de subida propia (y registrar su SHA-1 en Firebase).
-            signingConfig = signingConfigs.getByName("debug")
+            // Sin clave de subida, los APK de release se firman con la clave debug (~/.android/debug.keystore) para
+            // poder probarlos en el teléfono. El .aab es solo para Play, que rechaza la firma debug: ahí se exige la clave.
+            signingConfig = if (releaseKeystore != null) {
+                signingConfigs.getByName("release")
+            } else {
+                if (gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }) {
+                    throw GradleException("Falta la clave de subida: crea android/key.properties (ver key.properties.example)")
+                }
+                logger.warn("Release firmado con la clave debug: no sirve para Google Play (falta android/key.properties)")
+                signingConfigs.getByName("debug")
+            }
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

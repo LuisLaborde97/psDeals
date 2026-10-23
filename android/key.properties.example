@@ -1,0 +1,10 @@
+# Copia este archivo como key.properties (en esta misma carpeta, android/) y completa los valores.
+# key.properties está en .gitignore: nunca lo subas al repositorio, ni el .jks.
+#
+# Para generar la clave de subida (una sola vez; guarda el .jks y las contraseñas en un lugar seguro):
+#   keytool -genkeypair -v -keystore ~/keys/golab-upload.jks -alias golab-upload \
+#     -keyalg RSA -keysize 2048 -validity 10000
+storeFile=/home/USUARIO/keys/golab-upload.jks
+storePassword=
+keyAlias=golab-upload
+keyPassword=
