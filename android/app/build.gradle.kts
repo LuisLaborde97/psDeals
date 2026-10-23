@@ -5,13 +5,13 @@ plugins {
 }
 
 android {
-    namespace = "com.example.psdeals"
+    namespace = "co.golab.deals"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.example.psdeals"
+        applicationId = "co.golab.deals"
         minSdk = 24
         targetSdk = 37
         // Subirlo en cada APK que se reparta: Android solo instala encima uno con versionCode mayor, y el
