@@ -2,3 +2,5 @@
 
 # Configuración local de MCP
 .mcp.json
+*.jks
+key.properties
