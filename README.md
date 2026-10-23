@@ -6,9 +6,9 @@
   <p>El rastreador definitivo de ofertas gamer multiplataforma para Android.</p>
 
   <!-- Reemplaza "TuUsuario" con tu nombre real de GitHub -->
-  [![Release](https://img.shields.io/github/v/release/TuUsuario/GoLab-Deals?style=flat-square)](https://github.com/TuUsuario/GoLab-Deals/releases)
-  [![Android](https://img.shields.io/badge/Android-3DDC84?style=flat-square&logo=android&logoColor=white)](#)
-  [![License](https://img.shields.io/github/license/TuUsuario/GoLab-Deals?style=flat-square)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/LuisLaborde97/psDeals?color=blue)](https://github.com/LuisLaborde97/psDeals/releases)
+[![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
+[![License](https://img.shields.io/github/license/LuisLaborde97/psDeals?color=blue)](https://github.com/LuisLaborde97/psDeals/blob/main/LICENSE)
 </div>
 
 ## 🎮 Características
