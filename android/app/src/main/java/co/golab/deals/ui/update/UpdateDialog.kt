@@ -13,6 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -30,6 +34,8 @@ import co.golab.deals.ui.openStoreUrl
 @Composable
 fun UpdateDialog(update: AppUpdate, onPostpone: () -> Unit) {
     val context = LocalContext.current
+    // Ya encolada: el botón pasa a abrir la lista de descargas en vez de bajar el archivo otra vez.
+    var downloading by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = { if (!update.isMandatory) onPostpone() },
         properties = DialogProperties(
@@ -58,12 +64,27 @@ fun UpdateDialog(update: AppUpdate, onPostpone: () -> Unit) {
                     Spacer(Modifier.height(12.dp))
                 }
                 Text(
-                    "Se descargará el instalable en tu navegador. Ábrelo desde la notificación de descarga para instalarlo.",
+                    if (downloading) {
+                        "Descargando… Cuando termine, toca la notificación de descarga para instalar la nueva versión."
+                    } else {
+                        "Se descargará el instalador. Cuando termine, toca la notificación de descarga para instalarlo."
+                    },
                     style = MaterialTheme.typography.bodySmall,
+                    color = if (downloading) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         },
-        confirmButton = { Button(onClick = { context.openStoreUrl(update.downloadUrl) }) { Text("Actualizar") } },
+        confirmButton = {
+            Button(
+                onClick = {
+                    when {
+                        downloading -> UpdateDownloader.openDownloads(context)
+                        UpdateDownloader.start(context, update) -> downloading = true
+                        else -> context.openStoreUrl(update.downloadUrl) // Android 9 o anterior: navegador
+                    }
+                },
+            ) { Text(if (downloading) "Ver descargas" else "Actualizar") }
+        },
         dismissButton = if (update.isMandatory) null else ({ TextButton(onClick = onPostpone) { Text("Más tarde") } }),
         // Mismo estilo que los diálogos de monedas y de cuenta.
         shape = RoundedCornerShape(24.dp),

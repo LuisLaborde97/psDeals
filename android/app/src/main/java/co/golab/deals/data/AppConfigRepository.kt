@@ -56,6 +56,7 @@ class AppConfigRepository(
         }
         return AppUpdate(
             latestVersionCode = versionCode,
+            latestVersionName = getString("latestVersionName")?.trim()?.takeIf { it.isNotEmpty() },
             downloadUrl = url,
             // La consola de Firestore guarda "\n" literal al escribir en una sola línea.
             releaseNotes = getString("releaseNotes").orEmpty().replace("\\n", "\n").trim(),

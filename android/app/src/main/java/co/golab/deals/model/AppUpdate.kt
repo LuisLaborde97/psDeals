@@ -4,6 +4,8 @@ package co.golab.deals.model
 data class AppUpdate(
     /** Se compara con BuildConfig.VERSION_CODE; el APK publicado debe tener exactamente este versionCode. */
     val latestVersionCode: Int,
+    /** Nombre visible (ej. "1.0.0-beta06") para la notificación de descarga; null si el documento no lo trae. */
+    val latestVersionName: String? = null,
     /** Enlace directo al APK (https). Lo abre el navegador, que lo descarga. */
     val downloadUrl: String,
     val releaseNotes: String,
