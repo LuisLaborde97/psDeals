@@ -204,7 +204,7 @@ fun DealsScreen(
         onPauseOrDispose {}
     }
     if (showCurrencyInfo) {
-        CurrencyInfoDialog(onDismiss = { showCurrencyInfo = false })
+        PriceInfoSheet(onDismiss = { showCurrencyInfo = false })
     }
     if (showSettings) {
         SettingsDialog(
@@ -1039,40 +1039,6 @@ private fun PulsingFire() {
  * Explica por qué conviven US$ y COP en la lista. Opaco (no cristal como las tarjetas): sobre la
  * grilla de portadas un diálogo translúcido sería ilegible.
  */
-@Composable
-private fun CurrencyInfoDialog(onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(painterResource(R.drawable.ic_info), contentDescription = null) },
-        title = { Text("Sobre los precios y monedas", textAlign = TextAlign.Center) },
-        text = {
-            Text(
-                // Epic: las rebajas vienen de IsThereAnyDeal, que para Colombia solo da el precio de EE. UU. en USD.
-                "Cada tienda publica sus precios para Colombia en una moneda distinta, y los mostramos tal cual:\n\n" +
-                    "• PlayStation cobra en dólares (US$).\n" +
-                    "• Steam y Xbox cobran en pesos colombianos (COP).\n" +
-                    "• Epic Games: los juegos gratis se muestran en pesos. En las rebajas mostramos como referencia " +
-                    "el precio en dólares de la tienda de EE. UU.; lo que Epic te cobre en pesos puede ser distinto.\n\n" +
-                    "${stringResource(id = R.string.app_name)} es un agregador gratuito y no aplica ninguna comisión. " +
-                    "Si pagas en dólares, el cargo " +
-                    "final dependerá de la tasa de cambio de tu banco.\n\n" +
-                    // Uso nominativo de las marcas: identifica cada tienda sin sugerir que alguna avala la app.
-                    "${stringResource(id = R.string.app_name)} es un proyecto independiente, sin afiliación con " +
-                    "PlayStation, Steam, Epic Games ni Xbox. Sus nombres, logotipos y portadas pertenecen a sus dueños.",
-                style = MaterialTheme.typography.bodyMedium,
-                // Con scroll propio: en pantallas pequeñas el texto largo dejaría los botones fuera de la vista.
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-            )
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Entendido") } },
-        shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        iconContentColor = MaterialTheme.colorScheme.primary,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
 @Composable
 private fun ErrorContent(message: String, onRetry: () -> Unit) {
     Column(
