@@ -19,9 +19,9 @@ export const STORE_PUSH_MIN_DISCOUNT = DISCOUNT_BUCKETS[0];
 /** Pushes individuales por tienda y ejecución; el resto de esa tienda va en un resumen por umbral. */
 const MAX_PUSHES_PER_STORE = Number(process.env.MAX_PUSHES_PER_STORE ?? 2);
 
-/** "deals_xbox_50": ofertas de Xbox desde -50 %. Debe coincidir con NotificationPreferences.topicFor en la app. */
-export function storeTopic(platform: Platform, bucket: DiscountBucket): string {
-  return `deals_${platform}_${bucket}`;
+/** "deals_mx_xbox_50": ofertas de Xbox en México desde -50 %. Debe coincidir con AppPreferences.topicFor en la app. */
+export function storeTopic(country: string, platform: Platform, bucket: DiscountBucket): string {
+  return `deals_${country}_${platform}_${bucket}`;
 }
 /** Nombre visible de cada tienda en los pushes (mismos textos que los chips de la app). */
 export const PLATFORM_LABELS: Record<Platform, string> = {
@@ -64,8 +64,12 @@ export async function notifyDeals(deals: Deal[]): Promise<{ sent: number; failed
  *
  * @param dryRun FCM valida los mensajes sin entregarlos.
  */
-export async function notifyStoreTopics(deals: Deal[], { dryRun = false } = {}): Promise<{ sent: number; failed: number }> {
-  const messages = storeTopicMessages(deals);
+export async function notifyStoreTopics(
+  deals: Deal[],
+  country: string,
+  { dryRun = false } = {},
+): Promise<{ sent: number; failed: number }> {
+  const messages = storeTopicMessages(deals, country);
   if (messages.length === 0) return { sent: 0, failed: 0 };
   initFirebase();
   const result = await sendAll(getMessaging(), messages, dryRun);
@@ -74,7 +78,7 @@ export async function notifyStoreTopics(deals: Deal[], { dryRun = false } = {}):
   return result;
 }
 
-export function storeTopicMessages(deals: Deal[]): Message[] {
+export function storeTopicMessages(deals: Deal[], country: string): Message[] {
   const messages: Message[] = [];
   const platforms = [...new Set(deals.map((d) => d.platform))];
   for (const platform of platforms) {
@@ -84,14 +88,14 @@ export function storeTopicMessages(deals: Deal[]): Message[] {
     for (const deal of sorted.slice(0, MAX_PUSHES_PER_STORE)) {
       // Condición y no un tema: la oferta llega una sola vez a cada teléfono aunque esté en varios umbrales.
       const condition = DISCOUNT_BUCKETS.filter((b) => deal.discountPercent >= b)
-        .map((b) => `'${storeTopic(platform, b)}' in topics`)
+        .map((b) => `'${storeTopic(country, platform, b)}' in topics`)
         .join(' || ');
       messages.push(dealMessage(deal, { condition }));
     }
     const remaining = sorted.slice(MAX_PUSHES_PER_STORE);
     for (const bucket of DISCOUNT_BUCKETS) {
       const forBucket = remaining.filter((d) => d.discountPercent >= bucket);
-      if (forBucket.length > 0) messages.push(storeSummaryMessage(platform, bucket, forBucket));
+      if (forBucket.length > 0) messages.push(storeSummaryMessage(country, platform, bucket, forBucket));
     }
   }
   return messages;
@@ -164,14 +168,14 @@ export function summaryMessage(deals: Deal[]): Message {
 }
 
 /** Resumen de una tienda para un umbral: solo lo reciben quienes eligieron esa tienda con ese umbral. */
-function storeSummaryMessage(platform: Platform, bucket: DiscountBucket, deals: Deal[]): Message {
+function storeSummaryMessage(country: string, platform: Platform, bucket: DiscountBucket, deals: Deal[]): Message {
   const store = PLATFORM_LABELS[platform];
   const n = deals.length;
   const title = bucket === 100
     ? `¡${n} ${n === 1 ? 'juego gratis más' : 'juegos gratis más'} en ${store}!`
     : `¡${n} ${n === 1 ? 'oferta más' : 'ofertas más'} de -${bucket}% o más en ${store}!`;
   return {
-    topic: storeTopic(platform, bucket),
+    topic: storeTopic(country, platform, bucket),
     notification: { title, body: 'Abre la app para verlas todas.' },
     data: { type: 'summary', count: String(n), region: deals[0].region, platforms: platform },
     android: {

@@ -1,3 +1,4 @@
+import { LEGACY_COUNTRY, configDocId, countryOf, dealsCollection } from './country.js';
 import { PUSH_MIN_DISCOUNT, deactivateMissing, loadPreviousDeals, markPlatformsRun, saveDeals, saveGenres } from './firestore.js';
 import { STORE_PUSH_MIN_DISCOUNT, notifyDeals, notifyStoreTopics, storeTopicMessages } from './notify.js';
 import { errMsg, scrapeDeals } from './scraper.js';
@@ -17,6 +18,8 @@ const ENGINES: { platform: Platform; scrape: (region: string) => Promise<ScrapeR
 
 async function main(): Promise<number> {
   const region = (process.env.PS_STORE_REGION || 'es-co').toLowerCase();
+  // Cada país en su colección y sus temas (ver country.ts); Colombia conserva los nombres de antes.
+  const country = countryOf(region);
   const dryRun = process.argv.includes('--dry-run');
   // --platform=steam ejecuta un solo motor (útil para probar sin esperar al de PlayStation).
   const only = process.argv.find((a) => a.startsWith('--platform='))?.split('=')[1];
@@ -25,7 +28,7 @@ async function main(): Promise<number> {
     console.error(`[main] plataforma desconocida: ${only}`);
     return 1;
   }
-  console.log(`[main] región=${region} dryRun=${dryRun} motores=${engines.map((e) => e.platform).join(',')}`);
+  console.log(`[main] región=${region} país=${country} colección=${dealsCollection(country)} dryRun=${dryRun} motores=${engines.map((e) => e.platform).join(',')}`);
 
   // En paralelo: un motor que falla o vuelve vacío no impide guardar lo de los demás.
   const results = await Promise.allSettled(engines.map((e) => e.scrape(region)));
@@ -80,18 +83,18 @@ async function main(): Promise<number> {
     }
     const candidates = deals.filter((d) => d.discountPercent >= PUSH_MIN_DISCOUNT).length;
     console.log(
-      `[dry-run] Se escribirían ${deals.length} documentos en "deals". ` +
+      `[dry-run] Se escribirían ${deals.length} documentos en "${dealsCollection(country)}". ` +
         `${candidates} tienen >= ${PUSH_MIN_DISCOUNT}% y recibirían push si son nuevos en Firestore.`,
     );
     // Solo lectura: detecta las alertas de wishlist y FCM valida los mensajes sin entregarlos.
     try {
-      const previous = await loadPreviousDeals(deals);
+      const previous = await loadPreviousDeals(deals, country);
       const alerts = findWishlistAlerts(deals, previous);
       printAlerts(alerts);
-      await sendWishlistAlerts(alerts, { dryRun: true });
+      await sendWishlistAlerts(alerts, country, { dryRun: true });
       const fresh = deals.filter((d) => !previous.has(d.id) && d.discountPercent >= STORE_PUSH_MIN_DISCOUNT);
-      printStorePushes(fresh);
-      await notifyStoreTopics(fresh, { dryRun: true });
+      printStorePushes(fresh, country);
+      await notifyStoreTopics(fresh, country, { dryRun: true });
     } catch (err) {
       console.warn(`[dry-run] no se pudieron revisar las alertas de wishlist (¿credenciales?): ${errMsg(err)}`);
     }
@@ -99,45 +102,47 @@ async function main(): Promise<number> {
   }
 
   // El estado previo se lee una vez y antes de escribir: después ya no quedaría el precio anterior.
-  const previous = await loadPreviousDeals(deals);
+  const previous = await loadPreviousDeals(deals, country);
   const alerts = findWishlistAlerts(deals, previous);
   printAlerts(alerts);
-  const { newPushCandidates, savedIds } = await saveDeals(deals, previous);
+  const { newPushCandidates, savedIds } = await saveDeals(deals, country, previous);
   console.log(`[main] ${newPushCandidates.length} ofertas nuevas con >= ${STORE_PUSH_MIN_DISCOUNT}%`);
-  // Canal general para las versiones anteriores (mismo umbral de siempre) y canales por tienda para las nuevas.
-  const legacy = await notifyDeals(newPushCandidates.filter((d) => d.discountPercent >= PUSH_MIN_DISCOUNT));
-  printStorePushes(newPushCandidates);
-  const byStore = await notifyStoreTopics(newPushCandidates);
+  // Canal general para las versiones anteriores (solo Colombia: no conocen otros países) y canales por tienda.
+  const legacy = country === LEGACY_COUNTRY
+    ? await notifyDeals(newPushCandidates.filter((d) => d.discountPercent >= PUSH_MIN_DISCOUNT))
+    : { sent: 0, failed: 0 };
+  printStorePushes(newPushCandidates, country);
+  const byStore = await notifyStoreTopics(newPushCandidates, country);
   const failed = legacy.failed + byStore.failed;
   // Tokens fallidos (teléfonos desinstalados) son normales y se limpian: no marcan la ejecución como fallida.
-  await sendWishlistAlerts(alerts.filter((a) => savedIds.has(a.deal.id)));
+  await sendWishlistAlerts(alerts.filter((a) => savedIds.has(a.deal.id)), country);
   // Solo tiendas completas cuyas ofertas se guardaron todas: con un lote fallido, sus ofertas no
   // escritas conservarían el lastSeenAt anterior y la app las tomaría por terminadas.
   const fullySaved = completePlatforms.filter((p) => deals.every((d) => d.platform !== p || savedIds.has(d.id)));
   try {
-    await markPlatformsRun(fullySaved);
+    await markPlatformsRun(fullySaved, country);
   } catch (err) {
     // Sin la marca la app sigue con la regla de 3 días: peor, pero no rompe nada.
-    console.error(`[main] no se pudo actualizar config/scraper: ${errMsg(err)}`);
+    console.error(`[main] no se pudo actualizar config/${configDocId('scraper', country)}: ${errMsg(err)}`);
   }
   try {
-    await deactivateMissing(fullySaved, savedIds);
+    await deactivateMissing(fullySaved, savedIds, country);
   } catch (err) {
     // La app también las descarta por lastRunAt: solo se pierde eficiencia en la paginación.
     console.error(`[main] no se pudieron marcar las ofertas terminadas: ${errMsg(err)}`);
   }
   try {
-    await saveGenres(deals);
+    await saveGenres(deals, country);
   } catch (err) {
-    console.error(`[main] no se pudo actualizar config/genres: ${errMsg(err)}`);
+    console.error(`[main] no se pudo actualizar config/${configDocId('genres', country)}: ${errMsg(err)}`);
   }
   // Un motor roto marca la ejecución como fallida para que se note en GitHub Actions.
   return failed > 0 || brokenEngines > 0 ? 1 : 0;
 }
 
 /** Qué recibiría cada canal por tienda: tema (o condición) y título. */
-function printStorePushes(deals: Parameters<typeof storeTopicMessages>[0]): void {
-  const messages = storeTopicMessages(deals);
+function printStorePushes(deals: Parameters<typeof storeTopicMessages>[0], country: string): void {
+  const messages = storeTopicMessages(deals, country);
   console.log(`[notify] ${messages.length} pushes por tienda planeados para ${deals.length} ofertas nuevas`);
   if (messages.length > 0) {
     console.table(

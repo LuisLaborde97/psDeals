@@ -16,8 +16,15 @@ permissions:
 
 jobs:
   scrape-and-notify:
+    name: Ofertas ${{ matrix.region }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # PlayStation en México recorre ~4000 productos (~18 min); Colombia termina en pocos minutos.
+    timeout-minutes: 40
+    strategy:
+      # Un país que falla no cancela al otro: cada uno escribe en su propia colección (ver backend/src/country.ts).
+      fail-fast: false
+      matrix:
+        region: [es-co, es-mx]
     defaults:
       run:
         working-directory: backend
@@ -45,4 +52,5 @@ jobs:
         env:
           # Rebajas de Epic vía IsThereAnyDeal; sin el secreto, Epic solo trae su colección de juegos gratis.
           ITAD_API_KEY: ${{ secrets.ITAD_API_KEY }}
+          PS_STORE_REGION: ${{ matrix.region }}
         run: npm run dev

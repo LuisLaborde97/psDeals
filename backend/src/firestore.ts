@@ -1,11 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
+import { configDocId, dealsCollection } from './country.js';
 import { errMsg } from './scraper.js';
 import { STORE_PUSH_MIN_DISCOUNT } from './notify.js';
 import type { Deal, Platform } from './types.js';
 
-const COLLECTION = 'deals';
 const MAX_BATCH_OPS = 450;
 const READ_CHUNK = 300;
 /** Prefijos por palabra para la búsqueda de la app; tope de largo (la app recorta igual su término). */
@@ -38,10 +38,10 @@ export interface SaveResult {
 }
 
 /** Estado previo de las ofertas, en una sola pasada y leyendo solo los campos que hacen falta. */
-export async function loadPreviousDeals(deals: Deal[]): Promise<Map<string, PreviousDeal>> {
+export async function loadPreviousDeals(deals: Deal[], country: string): Promise<Map<string, PreviousDeal>> {
   initFirebase();
   const db = getFirestore();
-  const refs = deals.map((d) => db.collection(COLLECTION).doc(d.id));
+  const refs = deals.map((d) => db.collection(dealsCollection(country)).doc(d.id));
   return fetchPrevious(db, refs);
 }
 
@@ -53,10 +53,10 @@ export async function loadPreviousDeals(deals: Deal[]): Promise<Map<string, Prev
  *
  * @param previous estado previo ya leído (index.ts lo necesita antes para detectar rebajas).
  */
-export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDeal>): Promise<SaveResult> {
+export async function saveDeals(deals: Deal[], country: string, previous?: Map<string, PreviousDeal>): Promise<SaveResult> {
   initFirebase();
   const db = getFirestore();
-  const existing = previous ?? (await loadPreviousDeals(deals));
+  const existing = previous ?? (await loadPreviousDeals(deals, country));
 
   const pushCandidates: Deal[] = [];
   const savedIds = new Set<string>();
@@ -69,7 +69,7 @@ export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDe
     const newInChunk: Deal[] = [];
 
     for (const deal of chunk) {
-      const ref = db.collection(COLLECTION).doc(deal.id);
+      const ref = db.collection(dealsCollection(country)).doc(deal.id);
       const now = FieldValue.serverTimestamp();
       if (existing.has(deal.id)) {
         // Ya existía: actualización silenciosa de precios.
@@ -126,12 +126,13 @@ export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDe
  * Solo se marcan tiendas cuyo motor funcionó y cuyas ofertas se guardaron todas: si se marcara una con
  * lotes fallidos, sus ofertas no escritas parecerían terminadas.
  */
-export async function markPlatformsRun(platforms: Platform[]): Promise<void> {
+export async function markPlatformsRun(platforms: Platform[], country: string): Promise<void> {
   if (platforms.length === 0) return;
   initFirebase();
   const lastRunAt = Object.fromEntries(platforms.map((p) => [p, FieldValue.serverTimestamp()]));
-  await getFirestore().collection('config').doc('scraper').set({ lastRunAt }, { merge: true });
-  console.log(`[firestore] config/scraper.lastRunAt actualizado: ${platforms.join(', ')}`);
+  const docId = configDocId('scraper', country);
+  await getFirestore().collection('config').doc(docId).set({ lastRunAt }, { merge: true });
+  console.log(`[firestore] config/${docId}.lastRunAt actualizado: ${platforms.join(', ')}`);
 }
 
 /**
@@ -140,12 +141,12 @@ export async function markPlatformsRun(platforms: Platform[]): Promise<void> {
  * documentos, la lista de deseos los sigue mostrando). Mismo criterio que markPlatformsRun: solo
  * tiendas recorridas completas y guardadas sin lotes fallidos.
  */
-export async function deactivateMissing(platforms: Platform[], savedIds: Set<string>): Promise<void> {
+export async function deactivateMissing(platforms: Platform[], savedIds: Set<string>, country: string): Promise<void> {
   if (platforms.length === 0) return;
   initFirebase();
   const db = getFirestore();
   // select() sin campos: solo hacen falta los IDs.
-  const snap = await db.collection(COLLECTION).where('active', '==', true).where('platform', 'in', platforms).select().get();
+  const snap = await db.collection(dealsCollection(country)).where('active', '==', true).where('platform', 'in', platforms).select().get();
   const missing = snap.docs.filter((doc) => !savedIds.has(doc.id));
   for (let i = 0; i < missing.length; i += MAX_BATCH_OPS) {
     const batch = db.batch();
@@ -160,7 +161,7 @@ export async function deactivateMissing(platforms: Platform[], savedIds: Set<str
  * toda la colección, así que los chips de género salen de aquí. Merge por tienda: una ejecución con
  * --platform, o una tienda sin géneros (falló esa fase o no los publica), no borra los de las demás.
  */
-export async function saveGenres(deals: Deal[]): Promise<void> {
+export async function saveGenres(deals: Deal[], country: string): Promise<void> {
   const byPlatform: Partial<Record<Platform, string[]>> = {};
   for (const deal of deals) {
     if (deal.genres.length === 0) continue;
@@ -168,8 +169,9 @@ export async function saveGenres(deals: Deal[]): Promise<void> {
   }
   if (Object.keys(byPlatform).length === 0) return;
   initFirebase();
-  await getFirestore().collection('config').doc('genres').set({ byPlatform }, { merge: true });
-  console.log(`[firestore] config/genres actualizado: ${Object.keys(byPlatform).join(', ')}`);
+  const docId = configDocId('genres', country);
+  await getFirestore().collection('config').doc(docId).set({ byPlatform }, { merge: true });
+  console.log(`[firestore] config/${docId} actualizado: ${Object.keys(byPlatform).join(', ')}`);
 }
 
 /**

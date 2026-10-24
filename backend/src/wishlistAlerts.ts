@@ -1,3 +1,4 @@
+import { wishlistKey } from './country.js';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getMessaging, type MulticastMessage } from 'firebase-admin/messaging';
 import { initFirebase, type PreviousDeal } from './firestore.js';
@@ -93,17 +94,20 @@ function currencyOf(priceText: string): string {
  */
 export async function sendWishlistAlerts(
   alerts: WishlistAlert[],
+  country: string,
   { dryRun = false }: { dryRun?: boolean } = {},
 ): Promise<AlertsReport> {
   const report: AlertsReport = { alerts: alerts.length, sentAlerts: 0, tokensTargeted: 0, delivered: 0, failed: 0, deadTokensRemoved: 0 };
   if (alerts.length === 0) return report;
   initFirebase();
 
-  const { tokensByDeal, ownersByToken } = await collectRecipients(alerts.map((a) => a.deal.id));
+  // Las wishlists guardan la clave con país (mx:steam-123 fuera de Colombia): se busca y se agrupa por ella.
+  const keyOf = (alert: WishlistAlert) => wishlistKey(country, alert.deal.id);
+  const { tokensByDeal, ownersByToken } = await collectRecipients(alerts.map(keyOf));
   const deadTokens = new Set<string>();
 
   for (const alert of alerts) {
-    const tokens = [...(tokensByDeal.get(alert.deal.id) ?? [])];
+    const tokens = [...(tokensByDeal.get(keyOf(alert)) ?? [])];
     if (tokens.length === 0) continue;
     report.sentAlerts++;
     report.tokensTargeted += tokens.length;
