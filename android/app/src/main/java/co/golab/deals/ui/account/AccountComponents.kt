@@ -169,14 +169,12 @@ private fun UserAvatar(user: SessionUser, size: Dp, modifier: Modifier = Modifie
  * Resumen de la cuenta vinculada; mismo estilo que el diálogo de monedas.
  * @param onDeleteAccount se llama tras confirmar; debe volver a pedir el token de Google (ver
  *   [rememberGoogleIdTokenRequest]). Al terminar la sesión pasa a anónima y quien lo muestra lo cierra.
- * @param onAlertSettings abre "Tiendas y alertas" (tiendas, umbral de descuento y aviso de batería).
  */
 @Composable
 fun AccountDialog(
     account: AccountUiState,
     onSignOut: () -> Unit,
     onDeleteAccount: () -> Unit,
-    onAlertSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val user = account.user ?: return
@@ -211,11 +209,6 @@ fun AccountDialog(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.height(16.dp))
-                TextButton(onClick = onAlertSettings, contentPadding = PaddingValues(horizontal = 0.dp)) {
-                    Icon(painterResource(R.drawable.ic_notification), contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Tiendas y alertas")
-                }
                 // Requisito de Google Play: la cuenta debe poder eliminarse desde la propia app.
                 TextButton(
                     onClick = { confirmingDelete = true },

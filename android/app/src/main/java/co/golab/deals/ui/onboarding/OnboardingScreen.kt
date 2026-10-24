@@ -121,7 +121,7 @@ fun OnboardingScreen(onDone: (stores: Set<StorePlatform>, minDiscount: Int) -> U
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Las alertas de los juegos que guardes en tu lista de deseos te llegan siempre, de cualquier tienda. " +
-                        "Puedes cambiar esto cuando quieras desde ⓘ.",
+                        "Puedes cambiarlo cuando quieras en Ajustes (⚙).",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

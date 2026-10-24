@@ -118,7 +118,7 @@ import co.golab.deals.data.DealsRepository
 import co.golab.deals.ui.openStoreUrl
 import co.golab.deals.notifications.BatteryOptimizationHelper
 import co.golab.deals.ui.BatteryOptimizationDialog
-import co.golab.deals.ui.StoreAlertsDialog
+import co.golab.deals.ui.SettingsDialog
 import co.golab.deals.ui.account.AccountButton
 import co.golab.deals.ui.account.AccountDialog
 import co.golab.deals.ui.account.AccountViewModel
@@ -177,7 +177,7 @@ fun DealsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var showCurrencyInfo by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
-    var showStoreAlerts by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(accountViewModel) {
         accountViewModel.messages.collect { snackbarHostState.showSnackbar(it) }
@@ -202,23 +202,17 @@ fun DealsScreen(
         onPauseOrDispose {}
     }
     if (showCurrencyInfo) {
-        CurrencyInfoDialog(
-            onAlertSettings = {
-                showCurrencyInfo = false
-                showStoreAlerts = true
-            },
-            onDismiss = { showCurrencyInfo = false },
-        )
+        CurrencyInfoDialog(onDismiss = { showCurrencyInfo = false })
     }
-    if (showStoreAlerts) {
-        StoreAlertsDialog(
+    if (showSettings) {
+        SettingsDialog(
             preferences = storePreferences,
             onSave = viewModel::saveAlerts,
             onBatterySettings = {
-                showStoreAlerts = false
+                showSettings = false
                 showBatteryDialog = true
             },
-            onDismiss = { showStoreAlerts = false },
+            onDismiss = { showSettings = false },
         )
     }
     if (showBatteryDialog) {
@@ -241,10 +235,6 @@ fun DealsScreen(
             account = account,
             onSignOut = accountViewModel::signOut,
             onDeleteAccount = onDeleteAccount,
-            onAlertSettings = {
-                showAccount = false
-                showStoreAlerts = true
-            },
             onDismiss = { showAccount = false },
         )
     }
@@ -309,6 +299,10 @@ fun DealsScreen(
                     AccountButton(account = account, onClick = onAccountClick)
                     IconButton(onClick = { showCurrencyInfo = true }) {
                         Icon(painterResource(R.drawable.ic_info), contentDescription = "Sobre los precios y monedas")
+                    }
+                    // Ajustes aparte de la cuenta: también los usa quien no inició sesión.
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(painterResource(R.drawable.ic_settings), contentDescription = "Ajustes")
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -548,7 +542,7 @@ private fun SearchHistoryPanel(history: List<String>, onClick: (String) -> Unit,
  * [StorePlatform]): está marcado cuando no hay ninguna elegida, y tocarlo limpia la selección.
  */
 @Composable
-/** @param preferredPlatforms tiendas elegidas por el usuario (bienvenida o "Tiendas y alertas"): van primero. */
+/** @param preferredPlatforms tiendas elegidas por el usuario (bienvenida o Ajustes): van primero. */
 private fun PlatformChips(
     selectedPlatforms: Set<StorePlatform>,
     preferredPlatforms: Set<StorePlatform>,
@@ -1043,8 +1037,7 @@ private fun PulsingFire() {
  * grilla de portadas un diálogo translúcido sería ilegible.
  */
 @Composable
-/** @param onAlertSettings abre "Tiendas y alertas": es el único acceso para quien no inició sesión. */
-private fun CurrencyInfoDialog(onAlertSettings: () -> Unit, onDismiss: () -> Unit) {
+private fun CurrencyInfoDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(painterResource(R.drawable.ic_info), contentDescription = null) },
@@ -1069,7 +1062,6 @@ private fun CurrencyInfoDialog(onAlertSettings: () -> Unit, onDismiss: () -> Uni
             )
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Entendido") } },
-        dismissButton = { TextButton(onClick = onAlertSettings) { Text("Tiendas y alertas") } },
         shape = RoundedCornerShape(24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         iconContentColor = MaterialTheme.colorScheme.primary,

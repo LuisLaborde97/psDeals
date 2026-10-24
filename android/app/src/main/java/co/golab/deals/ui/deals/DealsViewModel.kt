@@ -299,7 +299,7 @@ class DealsViewModel(
 
     fun onEndingSoonClick() = _quickFilters.update { it.copy(endingSoon = !it.endingSoon) }
 
-    /** Desde el diálogo "Tiendas y alertas": PSDealsApp resincroniza los temas de FCM al cambiar. */
+    /** Desde Ajustes (⚙): PSDealsApp resincroniza los temas de FCM al cambiar. */
     fun saveAlerts(stores: Set<StorePlatform>, minDiscount: Int) = preferences.setAlerts(stores, minDiscount)
 
     /** No cambia la tienda: limpia búsqueda, géneros y atajos dentro de la tienda actual. */

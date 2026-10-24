@@ -41,12 +41,12 @@ import co.golab.deals.model.StorePlatform
 import co.golab.deals.ui.deals.iconRes
 
 /**
- * Tiendas de las que llegan las ofertas del día y desde qué descuento. Se abre desde el perfil y desde ⓘ, así que
- * también lo tiene quien no inició sesión. Los cambios se aplican al guardar (cada cambio resincroniza los temas
+ * Ajustes (ícono ⚙ de la barra superior, también sin iniciar sesión): tiendas de las que llegan las ofertas del día,
+ * desde qué descuento y el aviso de batería. Los cambios se aplican al guardar (cada cambio resincroniza los temas
  * de FCM).
  */
 @Composable
-fun StoreAlertsDialog(
+fun SettingsDialog(
     preferences: StorePreferences,
     onSave: (stores: Set<StorePlatform>, minDiscount: Int) -> Unit,
     onBatterySettings: () -> Unit,
@@ -57,10 +57,12 @@ fun StoreAlertsDialog(
     var minDiscount by rememberSaveable { mutableIntStateOf(preferences.minDiscount) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(painterResource(R.drawable.ic_notification), contentDescription = null) },
-        title = { Text("Tiendas y alertas") },
+        icon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
+        title = { Text("Ajustes") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Alertas de ofertas", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(4.dp))
                 Text("Te avisamos de las ofertas nuevas de:", style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(8.dp))
                 StorePlatform.entries.forEach { platform ->
@@ -96,7 +98,7 @@ fun StoreAlertsDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = onBatterySettings, contentPadding = PaddingValues(horizontal = 0.dp)) {
-                    Text("¿No te llegan a tiempo? Revisa la batería")
+                    Text("Revisar el ahorro de batería")
                 }
             }
         },
