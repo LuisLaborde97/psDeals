@@ -1013,8 +1013,13 @@ private fun CurrencyInfoDialog(onBatterySettings: () -> Unit, onDismiss: () -> U
                     "el precio en dólares de la tienda de EE. UU.; lo que Epic te cobre en pesos puede ser distinto.\n\n" +
                     "${stringResource(id = R.string.app_name)} es un agregador gratuito y no aplica ninguna comisión. " +
                     "Si pagas en dólares, el cargo " +
-                    "final dependerá de la tasa de cambio de tu banco.",
+                    "final dependerá de la tasa de cambio de tu banco.\n\n" +
+                    // Uso nominativo de las marcas: identifica cada tienda sin sugerir que alguna avala la app.
+                    "${stringResource(id = R.string.app_name)} es un proyecto independiente, sin afiliación con " +
+                    "PlayStation, Steam, Epic Games ni Xbox. Sus nombres, logotipos y portadas pertenecen a sus dueños.",
                 style = MaterialTheme.typography.bodyMedium,
+                // Con scroll propio: en pantallas pequeñas el texto largo dejaría los botones fuera de la vista.
+                modifier = Modifier.verticalScroll(rememberScrollState()),
             )
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Entendido") } },

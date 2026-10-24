@@ -1,8 +1,10 @@
 # Política de privacidad de GoLab Deals
 
-**Última actualización:** 23 de octubre de 2026
+**Última actualización:** 24 de octubre de 2026
 
 GoLab Deals ("la app") es una aplicación para Android que reúne ofertas de videojuegos publicadas por tiendas como PlayStation Store, Steam, Epic Games Store y Microsoft Store (Xbox). Esta política explica qué datos trata la app, para qué y con quién se comparten.
+
+GoLab Deals es un proyecto independiente: no está afiliado, patrocinado ni respaldado por Sony Interactive Entertainment (PlayStation), Valve (Steam), Epic Games, Microsoft (Xbox) ni ninguna otra tienda. Los nombres, logotipos, portadas y marcas que aparecen en la app pertenecen a sus respectivos dueños y se muestran solo para identificar cada tienda y cada juego.
 
 El responsable del tratamiento es **Luis Camilo Laborde Saavedra**, contacto: **[Kmilolaborde18@gmail.com](mailto:Kmilolaborde18@gmail.com)**.
 
