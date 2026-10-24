@@ -2,8 +2,9 @@ name: Daily Deals Scraper
 
 on:
   schedule:
-    # Se ejecuta todos los días a las 15:00 UTC (10:00 AM hora de Colombia)
-    - cron: '0 15 * * *'
+    # 12:23 UTC = 7:23 a. m. en Colombia. GitHub retrasa los cron en horas pico (con '0 15' llegaba 3-5 h tarde):
+    # un minuto poco usado y más temprano deja las ofertas listas a media mañana aunque haya retraso.
+    - cron: '23 12 * * *'
   workflow_dispatch: # Te permite ejecutarlo con un botón manualmente
 
 # Evita dos ejecuciones simultáneas (ej. cron + botón manual), que podrían enviar pushes duplicados.
