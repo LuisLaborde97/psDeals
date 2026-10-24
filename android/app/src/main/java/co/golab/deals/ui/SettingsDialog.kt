@@ -37,30 +37,40 @@ import androidx.compose.ui.unit.dp
 import co.golab.deals.R
 import co.golab.deals.data.AppPreferences
 import co.golab.deals.data.StorePreferences
+import co.golab.deals.model.Country
 import co.golab.deals.model.StorePlatform
 import co.golab.deals.ui.deals.iconRes
 
 /**
- * Ajustes (ícono ⚙ de la barra superior, también sin iniciar sesión): tiendas de las que llegan las ofertas del día,
- * desde qué descuento y el aviso de batería. Los cambios se aplican al guardar (cada cambio resincroniza los temas
+ * Ajustes (ícono ⚙ de la barra superior, también sin iniciar sesión): país de las ofertas, tiendas de las que llegan
+ * las ofertas del día, desde qué descuento y el aviso de batería. Los cambios se aplican al guardar (cada cambio resincroniza los temas
  * de FCM).
  */
 @Composable
 fun SettingsDialog(
     preferences: StorePreferences,
-    onSave: (stores: Set<StorePlatform>, minDiscount: Int) -> Unit,
+    onSave: (country: Country, stores: Set<StorePlatform>, minDiscount: Int) -> Unit,
     onBatterySettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     // Ids y no el enum: rememberSaveable guarda listas de String sin un Saver propio.
     var storeIds by rememberSaveable { mutableStateOf(preferences.alertStores.map { it.id }) }
     var minDiscount by rememberSaveable { mutableIntStateOf(preferences.minDiscount) }
+    var countryCode by rememberSaveable { mutableStateOf(preferences.country.code) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
         title = { Text("Ajustes") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("País", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Elige el país de tus cuentas en las tiendas: de él dependen los precios.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                CountrySelector(selected = Country.fromCode(countryCode) ?: preferences.country, onSelect = { countryCode = it.code })
+                Spacer(Modifier.height(16.dp))
                 Text("Alertas de ofertas", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(4.dp))
                 Text("Te avisamos de las ofertas nuevas de:", style = MaterialTheme.typography.bodyMedium)
@@ -105,7 +115,11 @@ fun SettingsDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onSave(storeIds.mapNotNullTo(LinkedHashSet()) { StorePlatform.fromId(it) }, minDiscount)
+                    onSave(
+                        Country.fromCode(countryCode) ?: preferences.country,
+                        storeIds.mapNotNullTo(LinkedHashSet()) { StorePlatform.fromId(it) },
+                        minDiscount,
+                    )
                     onDismiss()
                 },
             ) { Text("Guardar") }
@@ -129,6 +143,21 @@ fun DiscountSelector(selected: Int, onSelect: (Int) -> Unit, modifier: Modifier 
                 selected = option == selected,
                 onClick = { onSelect(option) },
                 label = { Text(AppPreferences.discountLabel(option)) },
+            )
+        }
+    }
+}
+
+/** Países con ofertas, con su bandera. FlowRow: en pantallas angostas los chips bajan de línea. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun CountrySelector(selected: Country, onSelect: (Country) -> Unit, modifier: Modifier = Modifier) {
+    FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Country.entries.forEach { country ->
+            FilterChip(
+                selected = country == selected,
+                onClick = { onSelect(country) },
+                label = { Text("${country.flag}  ${country.label}") },
             )
         }
     }

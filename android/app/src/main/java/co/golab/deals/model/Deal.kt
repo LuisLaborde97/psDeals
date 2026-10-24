@@ -22,4 +22,9 @@ data class Deal(
     val endDate: Long? = null,
     /** false: el backend ya no la vio en una ejecución completa de su tienda; null en documentos antiguos. */
     val active: Boolean? = null,
-)
+    /** País de la colección de la que salió (los IDs se repiten entre países). */
+    val country: Country = Country.DEFAULT,
+) {
+    /** Clave en la wishlist del usuario: el ID solo en Colombia, `mx:steam-123` en los demás países. */
+    val wishlistKey: String get() = country.wishlistKey(id)
+}

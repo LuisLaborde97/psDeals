@@ -30,7 +30,7 @@ class PSDealsApp : Application() {
         // Al arrancar y cada vez que el usuario cambia sus tiendas o su umbral de alertas.
         appScope.launch {
             preferences.state
-                .map { it.alertStores to it.minDiscount }
+                .map { Triple(it.country, it.alertStores, it.minDiscount) }
                 .distinctUntilChanged()
                 .collect { DealsNotifications.syncTopics(this@PSDealsApp, preferences.state.value) }
         }

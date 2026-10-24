@@ -16,6 +16,7 @@ import co.golab.deals.data.DealsPage
 import co.golab.deals.data.DealsQuery
 import co.golab.deals.data.DealsRepository
 import co.golab.deals.data.StorePreferences
+import co.golab.deals.model.Country
 import co.golab.deals.model.Deal
 import co.golab.deals.model.StorePlatform
 import com.google.firebase.firestore.DocumentSnapshot
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -133,11 +135,17 @@ class DealsViewModel(
     private val paging = MutableStateFlow(Paging())
     private var loadMoreJob: Job? = null
 
-    private val lastRuns: StateFlow<Map<String, Long>> =
-        repository.observeLastRuns().stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+    /** País de las ofertas: cambiarlo en Ajustes reinicia la lista, los géneros y la vigencia. */
+    private val country: StateFlow<Country> = preferences.state
+        .map { it.country }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, preferences.state.value.country)
+
+    private val lastRuns: StateFlow<Map<String, Long>> = country
+        .flatMapLatest { repository.observeLastRuns(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     /** Géneros de las tiendas elegidas (de todas si no hay selección), según config/genres. */
-    val availableGenres: StateFlow<List<String>> = combine(repository.observeGenres(), _selectedPlatforms) { byPlatform, platforms ->
+    val availableGenres: StateFlow<List<String>> = combine(country.flatMapLatest { repository.observeGenres(it) }, _selectedPlatforms) { byPlatform, platforms ->
         val lists = if (platforms.isEmpty()) byPlatform.values else platforms.mapNotNull { byPlatform[it.id] }
         lists.flatten().distinct().sortedWith(Collator.getInstance()) // orden alfabético con tildes: "Único" junto a la U
     }
@@ -151,10 +159,13 @@ class DealsViewModel(
         val search = snapshotFlow { searchQuery.trim() }
             .distinctUntilChanged()
             .debounce { if (it.isEmpty()) 0L else SEARCH_DEBOUNCE_MS }
-        val query = combine(_selectedPlatforms, _selectedGenres, search, availableGenres, _quickFilters) { platforms, selected, text, genres, quick ->
+        // combine admite 5 flujos con tipo: país y atajos viajan juntos.
+        val countryAndQuick = combine(country, _quickFilters) { c, q -> c to q }
+        val query = combine(_selectedPlatforms, _selectedGenres, search, availableGenres, countryAndQuick) { platforms, selected, text, genres, (country, quick) ->
             // Solo cuentan los elegidos que existen en las tiendas actuales: uno que desapareció tras una
             // actualización (o al cambiar de tienda) se ignora en vez de dejar la lista vacía.
             DealsQuery(
+                country = country,
                 platforms = platforms.mapTo(HashSet()) { it.id },
                 genres = selected.intersect(genres.toSet()),
                 search = text,
@@ -206,7 +217,9 @@ class DealsViewModel(
         paging.value = Paging(
             query = query,
             // Mismas tiendas: el total no cambia, así el contador no parpadea mientras se recalcula.
-            totalCount = previous.totalCount.takeIf { previous.query?.platforms == query.platforms },
+            totalCount = previous.totalCount.takeIf {
+                previous.query?.platforms == query.platforms && previous.query.country == query.country
+            },
             items = deals,
             cursor = page.cursor,
             isLastPage = page.isLastPage,
@@ -215,7 +228,7 @@ class DealsViewModel(
         )
         // Después de mostrar la página: el contador no debe demorar la lista.
         val (total, filtered) = coroutineScope {
-            val total = async { repository.countDeals(DealsQuery(platforms = query.platforms)) }
+            val total = async { repository.countDeals(DealsQuery(country = query.country, platforms = query.platforms)) }
             val filtered = async { if (query.isFiltered) repository.countDeals(query) else null }
             total.await() to filtered.await()
         }
@@ -299,8 +312,11 @@ class DealsViewModel(
 
     fun onEndingSoonClick() = _quickFilters.update { it.copy(endingSoon = !it.endingSoon) }
 
-    /** Desde Ajustes (⚙): PSDealsApp resincroniza los temas de FCM al cambiar. */
-    fun saveAlerts(stores: Set<StorePlatform>, minDiscount: Int) = preferences.setAlerts(stores, minDiscount)
+    /** Desde Ajustes: el país reinicia la lista (otra colección) y, con las alertas, los temas de FCM. */
+    fun saveSettings(country: Country, stores: Set<StorePlatform>, minDiscount: Int) {
+        preferences.setCountry(country)
+        preferences.setAlerts(stores, minDiscount)
+    }
 
     /** No cambia la tienda: limpia búsqueda, géneros y atajos dentro de la tienda actual. */
     fun clearFilters() {

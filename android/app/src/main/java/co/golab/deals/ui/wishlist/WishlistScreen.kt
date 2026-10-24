@@ -85,7 +85,7 @@ fun WishlistScreen(
                     Column {
                         Text("Lista de deseos", fontWeight = FontWeight.Bold)
                         (uiState as? WishlistUiState.Success)?.takeIf { it.deals.isNotEmpty() }?.let {
-                            val active = it.deals.count { deal -> deal.id !in it.expiredIds }
+                            val active = it.deals.count { deal -> deal.wishlistKey !in it.expiredIds }
                             val saved = if (it.deals.size == 1) "1 guardado" else "${it.deals.size} guardados"
                             Text(
                                 "$saved · $active en oferta",
@@ -121,7 +121,7 @@ fun WishlistScreen(
                         wishlist = account.wishlist,
                         onToggleWishlist = accountViewModel::toggleWishlist,
                         bottomInset = innerPadding.calculateBottomPadding(),
-                        isExpired = { deal -> deal.id in state.expiredIds },
+                        isExpired = { deal -> deal.wishlistKey in state.expiredIds },
                     )
                 }
             }

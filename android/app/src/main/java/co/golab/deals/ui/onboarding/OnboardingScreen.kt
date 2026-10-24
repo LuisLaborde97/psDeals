@@ -46,7 +46,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import co.golab.deals.R
 import co.golab.deals.data.AppPreferences
+import co.golab.deals.data.CountryDetector
+import co.golab.deals.model.Country
 import co.golab.deals.model.StorePlatform
+import co.golab.deals.ui.CountrySelector
 import co.golab.deals.ui.DiscountSelector
 import co.golab.deals.ui.deals.brandColor
 import co.golab.deals.ui.deals.iconRes
@@ -56,9 +59,18 @@ import co.golab.deals.ui.deals.rememberBackgroundBrush
  * Bienvenida (una sola vez): dónde juega el usuario y desde qué descuento quiere alertas. Sus tiendas quedan como
  * filtro inicial y como las únicas de las que llegan las ofertas del día. "Omitir" deja todas desde -50 %, lo mismo
  * que recibían las versiones anteriores.
+ *
+ * @param initialCountry el detectado por la SIM o la región del teléfono (CountryDetector).
+ * @param unsupportedCountryIso país detectado que aún no tiene ofertas: se avisa que se muestra otro.
  */
 @Composable
-fun OnboardingScreen(onDone: (stores: Set<StorePlatform>, minDiscount: Int) -> Unit) {
+fun OnboardingScreen(
+    initialCountry: Country,
+    unsupportedCountryIso: String?,
+    onDone: (country: Country, stores: Set<StorePlatform>, minDiscount: Int) -> Unit,
+) {
+    var countryCode by rememberSaveable { mutableStateOf(initialCountry.code) }
+    val country = Country.fromCode(countryCode) ?: initialCountry
     var storeIds by rememberSaveable { mutableStateOf(listOf<String>()) }
     var minDiscount by rememberSaveable { mutableIntStateOf(AppPreferences.DEFAULT_MIN_DISCOUNT) }
     // Fuera de un Scaffold o Surface nadie fija LocalContentColor: los textos sin color explícito salían negros sobre
@@ -97,7 +109,20 @@ fun OnboardingScreen(onDone: (stores: Set<StorePlatform>, minDiscount: Int) -> U
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(28.dp))
+                Text("Tu país", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(4.dp))
+                CountrySelector(selected = country, onSelect = { countryCode = it.code })
+                if (unsupportedCountryIso != null) {
+                    Text(
+                        "Aún no tenemos ofertas para ${CountryDetector.displayName(unsupportedCountryIso)}. " +
+                            "Elige el país de tus cuentas en las tiendas.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
                 Text("¿Dónde juegas?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(12.dp))
                 StorePlatform.entries.chunked(2).forEach { row ->
@@ -128,7 +153,7 @@ fun OnboardingScreen(onDone: (stores: Set<StorePlatform>, minDiscount: Int) -> U
 
                 Spacer(Modifier.height(32.dp))
                 Button(
-                    onClick = { onDone(storeIds.mapNotNullTo(LinkedHashSet()) { StorePlatform.fromId(it) }, minDiscount) },
+                    onClick = { onDone(country, storeIds.mapNotNullTo(LinkedHashSet()) { StorePlatform.fromId(it) }, minDiscount) },
                     enabled = storeIds.isNotEmpty(),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
@@ -142,7 +167,7 @@ fun OnboardingScreen(onDone: (stores: Set<StorePlatform>, minDiscount: Int) -> U
                     )
                 }
                 TextButton(
-                    onClick = { onDone(StorePlatform.entries.toSet(), AppPreferences.DEFAULT_MIN_DISCOUNT) },
+                    onClick = { onDone(country, StorePlatform.entries.toSet(), AppPreferences.DEFAULT_MIN_DISCOUNT) },
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 ) { Text("Omitir por ahora") }
             }

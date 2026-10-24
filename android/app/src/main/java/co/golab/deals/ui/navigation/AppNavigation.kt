@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +32,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import co.golab.deals.PSDealsApp
 import co.golab.deals.R
+import co.golab.deals.data.CountryDetector
+import co.golab.deals.model.Country
 import co.golab.deals.ui.account.AccountViewModel
 import co.golab.deals.ui.deals.DealsScreen
 import co.golab.deals.ui.deals.rememberBackgroundBrush
@@ -85,7 +88,13 @@ fun AppNavigation(
     if (!storePreferences.onboardingDone) {
         // La splash espera a que haya algo que mostrar: la bienvenida ya lo es.
         LaunchedEffect(Unit) { onDealsReady() }
-        OnboardingScreen(onDone = preferences::completeOnboarding)
+        val context = LocalContext.current
+        val unsupportedIso = remember { CountryDetector.detectIso(context)?.takeIf { Country.fromCode(it) == null } }
+        OnboardingScreen(
+            initialCountry = storePreferences.country,
+            unsupportedCountryIso = unsupportedIso,
+            onDone = preferences::completeOnboarding,
+        )
         return
     }
 

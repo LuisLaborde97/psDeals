@@ -16,6 +16,7 @@ import co.golab.deals.MainActivity
 import co.golab.deals.R
 import co.golab.deals.data.AppPreferences
 import co.golab.deals.data.StorePreferences
+import co.golab.deals.model.Country
 import co.golab.deals.model.StorePlatform
 import com.google.android.gms.tasks.Tasks
 import com.google.firebase.Firebase
@@ -54,17 +55,20 @@ object DealsNotifications {
     }
 
     /**
-     * Deja este teléfono suscrito solo al tema de cada tienda elegida con su umbral (p. ej. `deals_xbox_50`) y fuera
-     * del resto y del canal general. Las 17 operaciones solo se repiten si la elección cambió, si FCM rotó el token
+     * Deja este teléfono suscrito solo al tema de cada tienda elegida con su umbral (p. ej. `deals_co_xbox_50`) y fuera
+     * del resto y del canal general. Las operaciones (una por tema) solo se repiten si la elección cambió, si FCM rotó el token
      * ([force]) o si un intento anterior falló (sin red): la marca se guarda cuando todas terminan bien.
      */
     fun syncTopics(context: Context, preferences: StorePreferences, force: Boolean = false) {
-        val desired = preferences.alertStores.map { AppPreferences.topicFor(it, preferences.minDiscount) }.toSortedSet()
+        val desired = preferences.alertStores.map { AppPreferences.topicFor(preferences.country, it, preferences.minDiscount) }.toSortedSet()
         val signature = desired.joinToString(",")
         val prefs = context.getSharedPreferences(TOPIC_PREFS, Context.MODE_PRIVATE)
         if (!force && prefs.getString(KEY_SYNCED, null) == signature) return
         val messaging = Firebase.messaging
-        val all = StorePlatform.entries.flatMap { p -> AppPreferences.DISCOUNT_OPTIONS.map { AppPreferences.topicFor(p, it) } }
+        // Todos los países: al cambiar de país también hay que salir de los temas del anterior.
+        val all = Country.entries.flatMap { c ->
+            StorePlatform.entries.flatMap { p -> AppPreferences.DISCOUNT_OPTIONS.map { AppPreferences.topicFor(c, p, it) } }
+        }
         val tasks = all.map { topic -> if (topic in desired) messaging.subscribeToTopic(topic) else messaging.unsubscribeFromTopic(topic) } +
             messaging.unsubscribeFromTopic(LEGACY_TOPIC)
         Tasks.whenAll(tasks).addOnCompleteListener { task ->

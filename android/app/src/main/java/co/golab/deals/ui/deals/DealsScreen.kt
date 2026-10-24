@@ -204,12 +204,12 @@ fun DealsScreen(
         onPauseOrDispose {}
     }
     if (showCurrencyInfo) {
-        PriceInfoSheet(onDismiss = { showCurrencyInfo = false })
+        PriceInfoSheet(country = storePreferences.country, onDismiss = { showCurrencyInfo = false })
     }
     if (showSettings) {
         SettingsDialog(
             preferences = storePreferences,
-            onSave = viewModel::saveAlerts,
+            onSave = viewModel::saveSettings,
             onBatterySettings = {
                 showSettings = false
                 showBatteryDialog = true
@@ -726,17 +726,17 @@ fun DealsGrid(
         }
         // contentType: todas las celdas son del mismo tipo, así Compose reutiliza las jerarquías de las tarjetas
         // que salen de pantalla en vez de crearlas desde cero en cada lanzamiento rápido.
-        items(deals, key = { it.id }, contentType = { DEAL_CARD_CONTENT_TYPE }) { deal ->
+        items(deals, key = { it.wishlistKey }, contentType = { DEAL_CARD_CONTENT_TYPE }) { deal ->
             val expired = isExpired(deal)
             DealCard(
                 deal = deal,
                 onClick = {
                     // Aquí y no dentro del panel: un LaunchedEffect volvería a contarla al rotar la pantalla.
                     DealAnalytics.logDealOpened(deal)
-                    openDealId = deal.id
+                    openDealId = deal.wishlistKey
                 },
-                isWishlisted = deal.id in wishlist,
-                onToggleWishlist = { onToggleWishlist(deal.id) },
+                isWishlisted = deal.wishlistKey in wishlist,
+                onToggleWishlist = { onToggleWishlist(deal.wishlistKey) },
                 onShare = { shareDeal(context, deal, expired) },
                 isExpired = expired,
             )
@@ -756,13 +756,13 @@ fun DealsGrid(
 
     // Fuera de la grilla: el panel es su propia ventana, así que no toca gridState ni el LaunchedEffect de
     // paginación; las páginas siguen llegando y agregándose detrás mientras está abierto.
-    deals.firstOrNull { it.id == openDealId }?.let { deal ->
+    deals.firstOrNull { it.wishlistKey == openDealId }?.let { deal ->
         val expired = isExpired(deal)
         DealDetailSheet(
             deal = deal,
             isExpired = expired,
-            isWishlisted = deal.id in wishlist,
-            onToggleWishlist = { onToggleWishlist(deal.id) },
+            isWishlisted = deal.wishlistKey in wishlist,
+            onToggleWishlist = { onToggleWishlist(deal.wishlistKey) },
             onShare = { shareDeal(context, deal, expired) },
             onGoToStore = {
                 DealAnalytics.logStoreClick(deal)

@@ -1,6 +1,7 @@
 package co.golab.deals.data
 
 import android.util.Log
+import co.golab.deals.model.Country
 import co.golab.deals.model.Deal
 import co.golab.deals.model.StorePlatform
 import com.google.firebase.Firebase
@@ -32,8 +33,10 @@ import kotlin.math.max
  * @param genres OR entre géneros; vacío = sin filtro.
  * @param freeOnly solo juegos gratis (100 % de descuento).
  * @param endingSoon solo ofertas que terminan en las próximas 24 h, la más próxima primero.
+ * @param country país de las ofertas: cada uno tiene su colección (Country.dealsCollection).
  */
 data class DealsQuery(
+    val country: Country = Country.DEFAULT,
     val platforms: Set<String> = emptySet(),
     val genres: Set<String> = emptySet(),
     val search: String = "",
@@ -71,7 +74,7 @@ class DealsRepository(
         val firestoreQuery = plan.query.limit(pageSize).let { if (after != null) it.startAfter(after) else it }
         val snapshot = firestoreQuery.get(Source.DEFAULT).await()
         return DealsPage(
-            deals = snapshot.documents.mapNotNull { it.toDealOrNull() }.filter(plan.matches),
+            deals = snapshot.documents.mapNotNull { it.toDealOrNull(query.country) }.filter(plan.matches),
             cursor = snapshot.documents.lastOrNull() ?: after,
             isLastPage = snapshot.size() < pageSize,
             isFromCache = snapshot.metadata.isFromCache,
@@ -99,9 +102,10 @@ class DealsRepository(
      * `config/genres.byPlatform`: géneros de las ofertas de cada tienda (id de plataforma → géneros), escritos
      * por el backend. Los chips ya no pueden salir de la lista, que llega por páginas.
      */
-    fun observeGenres(): Flow<Map<String, List<String>>> = callbackFlow {
-        val registration = db.collection(CONFIG).document(GENRES_DOC).addSnapshotListener { snapshot, error ->
-            if (error != null) Log.w(TAG, "No se pudo leer config/$GENRES_DOC", error)
+    fun observeGenres(country: Country): Flow<Map<String, List<String>>> = callbackFlow {
+        val docId = country.configDoc(GENRES_DOC)
+        val registration = db.collection(CONFIG).document(docId).addSnapshotListener { snapshot, error ->
+            if (error != null) Log.w(TAG, "No se pudo leer config/$docId", error)
             val genres = (snapshot?.get("byPlatform") as? Map<*, *>).orEmpty()
                 .mapNotNull { (platform, list) ->
                     (platform as? String)?.let { p -> p to (list as? List<*>)?.filterIsInstance<String>().orEmpty() }
@@ -116,21 +120,26 @@ class DealsRepository(
      * Ofertas por ID (lista de deseos), en tiempo real. A diferencia de getDeals() no descarta las
      * terminadas: un juego guardado debe seguir en la lista aunque su rebaja acabe (ver [isActive]).
      * Firestore admite hasta 30 valores por whereIn, así que se escucha por lotes y se combinan.
+     *
+     * @param keys claves de la wishlist ([Deal.wishlistKey]): cada una se busca en la colección de su país.
      */
-    fun getDealsByIds(ids: Collection<String>): Flow<List<Deal>> {
-        if (ids.isEmpty()) return flowOf(emptyList())
-        val batches = ids.distinct().chunked(MAX_WHERE_IN).map { batch ->
-            callbackFlow {
-                val registration = db.collection(COLLECTION)
-                    .whereIn(FieldPath.documentId(), batch)
-                    .addSnapshotListener { snapshot, error ->
-                        if (error != null) {
-                            close(error)
-                            return@addSnapshotListener
+    fun getDealsByIds(keys: Collection<String>): Flow<List<Deal>> {
+        if (keys.isEmpty()) return flowOf(emptyList())
+        val byCountry = keys.distinct().map(Country::parseWishlistKey).groupBy({ it.first }, { it.second })
+        val batches = byCountry.flatMap { (country, ids) ->
+            ids.chunked(MAX_WHERE_IN).map { batch ->
+                callbackFlow {
+                    val registration = db.collection(country.dealsCollection)
+                        .whereIn(FieldPath.documentId(), batch)
+                        .addSnapshotListener { snapshot, error ->
+                            if (error != null) {
+                                close(error)
+                                return@addSnapshotListener
+                            }
+                            if (snapshot != null) trySend(snapshot.documents.mapNotNull { it.toDealOrNull(country) })
                         }
-                        if (snapshot != null) trySend(snapshot.documents.mapNotNull { it.toDealOrNull() })
-                    }
-                awaitClose { registration.remove() }
+                    awaitClose { registration.remove() }
+                }
             }
         }
         return combine(batches) { lists -> lists.flatMap { it.asIterable() } }
@@ -140,9 +149,10 @@ class DealsRepository(
      * `config/scraper.lastRunAt`: cuándo terminó el backend la última ejecución completa de cada tienda
      * (id de plataforma → epoch millis). Vacío si no existe o no se puede leer: se cae a la regla de 3 días.
      */
-    fun observeLastRuns(): Flow<Map<String, Long>> = callbackFlow {
-        val registration = db.collection(CONFIG).document(SCRAPER_DOC).addSnapshotListener { snapshot, error ->
-            if (error != null) Log.w(TAG, "No se pudo leer config/$SCRAPER_DOC", error)
+    fun observeLastRuns(country: Country): Flow<Map<String, Long>> = callbackFlow {
+        val docId = country.configDoc(SCRAPER_DOC)
+        val registration = db.collection(CONFIG).document(docId).addSnapshotListener { snapshot, error ->
+            if (error != null) Log.w(TAG, "No se pudo leer config/$docId", error)
             val runs = (snapshot?.get("lastRunAt") as? Map<*, *>).orEmpty()
                 .mapNotNull { (platform, at) -> (platform as? String)?.let { p -> (at as? Timestamp)?.let { p to it.toDate().time } } }
                 .toMap()
@@ -159,7 +169,7 @@ class DealsRepository(
      * Cada combinación necesita su índice compuesto (firestore.indexes.json).
      */
     private fun plan(query: DealsQuery): QueryPlan {
-        var firestoreQuery: Query = db.collection(COLLECTION).whereEqualTo("active", true)
+        var firestoreQuery: Query = db.collection(query.country.dealsCollection).whereEqualTo("active", true)
         if (query.platforms.isNotEmpty()) firestoreQuery = firestoreQuery.whereIn("platform", query.platforms.toList())
         val words = searchWords(query.search)
         if (query.freeOnly || query.endingSoon) return specialPlan(firestoreQuery, query, words)
@@ -222,7 +232,7 @@ class DealsRepository(
     }
 
     /** Mapeo manual y tolerante: un documento mal formado se descarta en vez de romper toda la lista. */
-    private fun DocumentSnapshot.toDealOrNull(): Deal? {
+    private fun DocumentSnapshot.toDealOrNull(country: Country): Deal? {
         val title = getString("title")
         val storeUrl = getString("storeUrl")?.takeIf { it.isNotBlank() }
         // Las tiendas nuevas pueden traer solo storeUrl: sirve de respaldo para productUrl.
@@ -248,12 +258,12 @@ class DealsRepository(
             // El backend la escribe en epoch millis; null si la tienda no la publica.
             endDate = (get("endDate") as? Number)?.toLong(),
             active = getBoolean("active"),
+            country = country,
         )
     }
 
     companion object {
         private const val TAG = "DealsRepository"
-        private const val COLLECTION = "deals"
         private const val CONFIG = "config"
         private const val SCRAPER_DOC = "scraper"
         private const val GENRES_DOC = "genres"

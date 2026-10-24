@@ -9,8 +9,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import co.golab.deals.PSDealsApp
 import co.golab.deals.data.DealsRepository
 import co.golab.deals.data.UserSession
+import co.golab.deals.model.Country
 import co.golab.deals.model.Deal
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -26,7 +28,7 @@ sealed interface WishlistUiState {
 
     /**
      * @param deals la más reciente primero.
-     * @param expiredIds las que ya no están en oferta (mismas reglas que la lista principal: DealsRepository.isActive).
+     * @param expiredIds claves de wishlist ([Deal.wishlistKey]) de las que ya no están en oferta (mismas reglas que la lista principal: DealsRepository.isActive).
      */
     data class Success(val deals: List<Deal>, val expiredIds: Set<String> = emptySet()) : WishlistUiState
     data class Error(val message: String) : WishlistUiState
@@ -38,6 +40,10 @@ class WishlistViewModel(
     private val repository: DealsRepository,
 ) : ViewModel() {
 
+    /** Última ejecución de cada tienda en cada país: la lista puede mezclar juegos de varios países. */
+    private val lastRunsByCountry: Flow<Map<Country, Map<String, Long>>> =
+        combine(Country.entries.map { country -> repository.observeLastRuns(country).map { country to it } }) { it.toMap() }
+
     val uiState: StateFlow<WishlistUiState> = session.profile
         .filterNotNull() // null = perfil cargando o sesión cambiando: se queda en Loading
         .map { it.wishlist }
@@ -45,11 +51,12 @@ class WishlistViewModel(
         .flatMapLatest { ids ->
             // arrayUnion agrega al final: se invierte para mostrar primero lo último que guardó.
             val order = ids.asReversed().withIndex().associate { (index, id) -> id to index }
-            combine(repository.getDealsByIds(ids), repository.observeLastRuns()) { deals, lastRuns ->
+            combine(repository.getDealsByIds(ids), lastRunsByCountry) { deals, lastRuns ->
                 val now = System.currentTimeMillis()
                 WishlistUiState.Success(
-                    deals = deals.sortedBy { order[it.id] },
-                    expiredIds = deals.filterNot { DealsRepository.isActive(it, now, lastRuns[it.platform]) }.mapTo(HashSet()) { it.id },
+                    deals = deals.sortedBy { order[it.wishlistKey] },
+                    expiredIds = deals.filterNot { DealsRepository.isActive(it, now, lastRuns[it.country]?.get(it.platform)) }
+                        .mapTo(HashSet()) { it.wishlistKey },
                 ) as WishlistUiState
             }
                 .catch { emit(WishlistUiState.Error(it.message ?: "Error desconocido")) }

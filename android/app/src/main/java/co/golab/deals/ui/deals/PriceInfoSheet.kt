@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import co.golab.deals.R
+import co.golab.deals.model.Country
 import co.golab.deals.model.StorePlatform
 import kotlinx.coroutines.launch
 
@@ -44,18 +45,33 @@ private val CardShape = RoundedCornerShape(20.dp)
 /** Moneda en que cobra cada tienda en Colombia y la aclaración que la acompaña. */
 private data class StoreCurrency(val platform: StorePlatform, val currency: String, val detail: String)
 
-// Epic: las rebajas vienen de IsThereAnyDeal, que para Colombia solo da el precio de EE. UU. en USD.
-private val STORE_CURRENCIES = listOf(
-    StoreCurrency(StorePlatform.PLAYSTATION, "US$", "Cobra en dólares estadounidenses."),
-    StoreCurrency(StorePlatform.STEAM, "COP", "Cobra en pesos colombianos."),
-    StoreCurrency(StorePlatform.XBOX, "COP", "Cobra en pesos colombianos."),
-    StoreCurrency(
+/**
+ * Lo que vimos en cada tienda (dry-run por país). Epic: las rebajas vienen de IsThereAnyDeal, que en Colombia y
+ * México solo da el precio de EE. UU. en USD; los juegos gratis sí salen en moneda local.
+ */
+private fun storeCurrencies(country: Country): List<StoreCurrency> {
+    val (local, localName) = when (country) {
+        Country.COLOMBIA -> "COP" to "pesos colombianos"
+        Country.MEXICO -> "MXN" to "pesos mexicanos"
+    }
+    val epic = StoreCurrency(
         StorePlatform.EPIC,
-        "US$ · COP",
+        "US$ · $local",
         "Juegos gratis en pesos. En las rebajas mostramos como referencia el precio en dólares de EE. UU.; " +
             "lo que Epic te cobre en pesos puede ser distinto.",
-    ),
-)
+    )
+    return listOf(
+        // En Colombia, la PS Store cobra en dólares; en México, en pesos.
+        if (country == Country.COLOMBIA) {
+            StoreCurrency(StorePlatform.PLAYSTATION, "US$", "Cobra en dólares estadounidenses.")
+        } else {
+            StoreCurrency(StorePlatform.PLAYSTATION, local, "Cobra en $localName.")
+        },
+        StoreCurrency(StorePlatform.STEAM, local, "Cobra en $localName."),
+        StoreCurrency(StorePlatform.XBOX, local, "Cobra en $localName."),
+        epic,
+    )
+}
 
 /**
  * Información de precios (ícono ⓘ): moneda de cada tienda, sin comisiones y aviso de no afiliación. Panel
@@ -63,7 +79,7 @@ private val STORE_CURRENCIES = listOf(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PriceInfoSheet(onDismiss: () -> Unit) {
+fun PriceInfoSheet(country: Country, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val appName = stringResource(R.string.app_name)
@@ -102,7 +118,8 @@ fun PriceInfoSheet(onDismiss: () -> Unit) {
             Text("Precios y monedas", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Cada tienda publica sus precios para Colombia en su propia moneda, y los mostramos tal cual.",
+                "Cada tienda publica sus precios para ${country.label} ${country.flag} en su propia moneda, y los " +
+                    "mostramos tal cual.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -116,7 +133,7 @@ fun PriceInfoSheet(onDismiss: () -> Unit) {
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh, CardShape)
                     .padding(16.dp),
             ) {
-                STORE_CURRENCIES.forEach { StoreCurrencyRow(it) }
+                storeCurrencies(country).forEach { StoreCurrencyRow(it) }
             }
 
             Spacer(Modifier.height(12.dp))
