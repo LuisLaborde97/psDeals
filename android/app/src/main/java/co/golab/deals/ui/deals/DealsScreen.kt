@@ -120,7 +120,7 @@ import co.golab.deals.notifications.BatteryOptimizationHelper
 import co.golab.deals.ui.BatteryOptimizationDialog
 import co.golab.deals.ui.SettingsDialog
 import co.golab.deals.ui.account.AccountButton
-import co.golab.deals.ui.account.AccountDialog
+import co.golab.deals.ui.account.AccountSheet
 import co.golab.deals.ui.account.AccountViewModel
 import co.golab.deals.ui.account.rememberGoogleIdTokenRequest
 import co.golab.deals.ui.account.rememberGoogleSignIn
@@ -161,6 +161,8 @@ fun DealsScreen(
     viewModel: DealsViewModel = viewModel(factory = DealsViewModel.Factory),
     accountViewModel: AccountViewModel = viewModel(factory = AccountViewModel.Factory),
     onContentReady: () -> Unit = {},
+    /** Desde la tarjeta "Juegos guardados" del panel de cuenta. */
+    onOpenWishlist: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     // Error también cuenta: retener la splash no lo arreglaría, y la pantalla de error ofrece reintentar.
@@ -231,10 +233,11 @@ fun DealsScreen(
         onError = accountViewModel::showMessage,
     )
     if (showAccount && account.isSignedInWithGoogle) {
-        AccountDialog(
+        AccountSheet(
             account = account,
             onSignOut = accountViewModel::signOut,
             onDeleteAccount = onDeleteAccount,
+            onOpenWishlist = onOpenWishlist,
             onDismiss = { showAccount = false },
         )
     }

@@ -127,7 +127,7 @@ fun AccountButton(account: AccountUiState, onClick: () -> Unit) {
  * cuando la foto de Google cambia, cambia la URL (que es la clave de la caché).
  */
 @Composable
-private fun UserAvatar(user: SessionUser, size: Dp, modifier: Modifier = Modifier) {
+internal fun UserAvatar(user: SessionUser, size: Dp, modifier: Modifier = Modifier) {
     val initial = user.displayName?.trim()?.firstOrNull()?.uppercase()
     Box(
         contentAlignment = Alignment.Center,
@@ -163,108 +163,4 @@ private fun UserAvatar(user: SessionUser, size: Dp, modifier: Modifier = Modifie
             )
         }
     }
-}
-
-/**
- * Resumen de la cuenta vinculada; mismo estilo que el diálogo de monedas.
- * @param onDeleteAccount se llama tras confirmar; debe volver a pedir el token de Google (ver
- *   [rememberGoogleIdTokenRequest]). Al terminar la sesión pasa a anónima y quien lo muestra lo cierra.
- */
-@Composable
-fun AccountDialog(
-    account: AccountUiState,
-    onSignOut: () -> Unit,
-    onDeleteAccount: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val user = account.user ?: return
-    val count = account.wishlist.size
-    var confirmingDelete by remember { mutableStateOf(false) }
-    if (confirmingDelete) {
-        DeleteAccountDialog(
-            onConfirm = {
-                confirmingDelete = false
-                onDeleteAccount()
-            },
-            onDismiss = { confirmingDelete = false },
-        )
-        return
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { UserAvatar(user = user, size = 56.dp) },
-        title = { Text(user.displayName ?: "Tu cuenta", textAlign = TextAlign.Center) },
-        text = {
-            Column {
-                user.email?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    if (count == 1) "1 juego en tu lista de deseos" else "$count juegos en tu lista de deseos",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Tu lista se guarda en tu cuenta de Google y te acompaña si cambias de teléfono.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Spacer(Modifier.height(16.dp))
-                // Requisito de Google Play: la cuenta debe poder eliminarse desde la propia app.
-                TextButton(
-                    onClick = { confirmingDelete = true },
-                    enabled = !account.isDeletingAccount,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    contentPadding = PaddingValues(horizontal = 0.dp),
-                ) {
-                    if (account.isDeletingAccount) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Eliminando cuenta…")
-                    } else {
-                        Text("Eliminar cuenta")
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    onSignOut()
-                    onDismiss()
-                },
-            ) { Text("Cerrar sesión") }
-        },
-        shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        iconContentColor = MaterialTheme.colorScheme.primary,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-/** Confirmación antes de borrar: la acción no se puede deshacer. */
-@Composable
-private fun DeleteAccountDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("¿Eliminar tu cuenta?") },
-        text = {
-            Text(
-                "Se borrarán tu lista de deseos, tu historial de búsqueda y los datos de tu cuenta de Google en " +
-                    "GoLab Deals. Esta acción no se puede deshacer.\n\nPara confirmar, elige tu cuenta de Google.",
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Eliminar") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
-        shape = RoundedCornerShape(24.dp),
-        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        titleContentColor = MaterialTheme.colorScheme.onSurface,
-        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }

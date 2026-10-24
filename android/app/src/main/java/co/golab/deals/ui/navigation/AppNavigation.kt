@@ -126,7 +126,13 @@ fun AppNavigation(
                 .padding(padding)
                 .consumeWindowInsets(padding),
         ) {
-            composable(Routes.DEALS) { DealsScreen(accountViewModel = accountViewModel, onContentReady = onDealsReady) }
+            composable(Routes.DEALS) {
+                DealsScreen(
+                    accountViewModel = accountViewModel,
+                    onContentReady = onDealsReady,
+                    onOpenWishlist = { navController.navigateToTab(Routes.WISHLIST) },
+                )
+            }
             composable(Routes.WISHLIST) {
                 WishlistScreen(
                     accountViewModel = accountViewModel,
