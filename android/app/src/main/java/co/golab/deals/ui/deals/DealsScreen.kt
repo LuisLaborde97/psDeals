@@ -113,9 +113,12 @@ import co.golab.deals.R
 import co.golab.deals.model.Deal
 import co.golab.deals.model.StorePlatform
 import co.golab.deals.analytics.DealAnalytics
+import co.golab.deals.data.DealsQuery
+import co.golab.deals.data.DealsRepository
 import co.golab.deals.ui.openStoreUrl
 import co.golab.deals.notifications.BatteryOptimizationHelper
 import co.golab.deals.ui.BatteryOptimizationDialog
+import co.golab.deals.ui.StoreAlertsDialog
 import co.golab.deals.ui.account.AccountButton
 import co.golab.deals.ui.account.AccountDialog
 import co.golab.deals.ui.account.AccountViewModel
@@ -166,12 +169,15 @@ fun DealsScreen(
     val genres by viewModel.availableGenres.collectAsStateWithLifecycle()
     val selectedGenres by viewModel.selectedGenres.collectAsStateWithLifecycle()
     val selectedPlatforms by viewModel.selectedPlatforms.collectAsStateWithLifecycle()
+    val quickFilters by viewModel.quickFilters.collectAsStateWithLifecycle()
+    val storePreferences by viewModel.storePreferences.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val account by accountViewModel.uiState.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
     val snackbarHostState = remember { SnackbarHostState() }
     var showCurrencyInfo by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
+    var showStoreAlerts by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(accountViewModel) {
         accountViewModel.messages.collect { snackbarHostState.showSnackbar(it) }
@@ -197,11 +203,22 @@ fun DealsScreen(
     }
     if (showCurrencyInfo) {
         CurrencyInfoDialog(
-            onBatterySettings = {
+            onAlertSettings = {
                 showCurrencyInfo = false
-                showBatteryDialog = true
+                showStoreAlerts = true
             },
             onDismiss = { showCurrencyInfo = false },
+        )
+    }
+    if (showStoreAlerts) {
+        StoreAlertsDialog(
+            preferences = storePreferences,
+            onSave = viewModel::saveAlerts,
+            onBatterySettings = {
+                showStoreAlerts = false
+                showBatteryDialog = true
+            },
+            onDismiss = { showStoreAlerts = false },
         )
     }
     if (showBatteryDialog) {
@@ -224,9 +241,9 @@ fun DealsScreen(
             account = account,
             onSignOut = accountViewModel::signOut,
             onDeleteAccount = onDeleteAccount,
-            onBatterySettings = {
+            onAlertSettings = {
                 showAccount = false
-                showBatteryDialog = true
+                showStoreAlerts = true
             },
             onDismiss = { showAccount = false },
         )
@@ -319,6 +336,7 @@ fun DealsScreen(
             )
             PlatformChips(
                 selectedPlatforms = selectedPlatforms,
+                preferredPlatforms = storePreferences.alertStores,
                 // Barra expandida al cambiar las tiendas: el contador de la selección nueva queda a la vista.
                 onPlatformClick = { platform ->
                     scrollBehavior.state.heightOffset = 0f
@@ -329,9 +347,14 @@ fun DealsScreen(
                     viewModel.onAllPlatformsClick()
                 },
             )
-            if (genres.isNotEmpty()) {
-                GenreChips(genres = genres, selectedGenres = selectedGenres, onGenreClick = viewModel::onGenreClick)
-            }
+            FilterChipsRow(
+                quickFilters = quickFilters,
+                onFreeOnlyClick = viewModel::onFreeOnlyClick,
+                onEndingSoonClick = viewModel::onEndingSoonClick,
+                genres = genres,
+                selectedGenres = selectedGenres,
+                onGenreClick = viewModel::onGenreClick,
+            )
             OfflineNotice(isFromCache = (uiState as? DealsUiState.Success)?.isFromCache == true)
 
             when (val state = uiState) {
@@ -370,7 +393,7 @@ fun DealsScreen(
                         state is DealsUiState.Success && state.isInitialLoading ->
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                         state is DealsUiState.Success && state.isFiltered -> ScrollableCentered {
-                            NoMatchesContent(onClearFilters = viewModel::clearFilters)
+                            NoMatchesContent(query = state.query, onClearFilters = viewModel::clearFilters)
                         }
                         else -> ScrollableCentered {
                             // Con una sola tienda se nombra; con varias, una lista larga no aporta.
@@ -525,11 +548,15 @@ private fun SearchHistoryPanel(history: List<String>, onClick: (String) -> Unit,
  * [StorePlatform]): está marcado cuando no hay ninguna elegida, y tocarlo limpia la selección.
  */
 @Composable
+/** @param preferredPlatforms tiendas elegidas por el usuario (bienvenida o "Tiendas y alertas"): van primero. */
 private fun PlatformChips(
     selectedPlatforms: Set<StorePlatform>,
+    preferredPlatforms: Set<StorePlatform>,
     onPlatformClick: (StorePlatform) -> Unit,
     onAllClick: () -> Unit,
 ) {
+    // sortedBy es estable: dentro de cada grupo se conserva el orden de siempre.
+    val platforms = remember(preferredPlatforms) { StorePlatform.entries.sortedBy { it !in preferredPlatforms } }
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -538,7 +565,7 @@ private fun PlatformChips(
         item(key = "all") {
             SelectableChip(label = "Todas", selected = selectedPlatforms.isEmpty(), onClick = onAllClick)
         }
-        items(StorePlatform.entries, key = { it.id }) { platform ->
+        items(platforms, key = { it.id }) { platform ->
             SelectableChip(
                 label = platform.label,
                 selected = platform in selectedPlatforms,
@@ -550,13 +577,32 @@ private fun PlatformChips(
     }
 }
 
+/** Atajos "Gratis" y "Termina pronto" primero, con ícono propio para distinguirlos de los géneros. */
 @Composable
-private fun GenreChips(genres: List<String>, selectedGenres: Set<String>, onGenreClick: (String) -> Unit) {
+private fun FilterChipsRow(
+    quickFilters: QuickFilters,
+    onFreeOnlyClick: () -> Unit,
+    onEndingSoonClick: () -> Unit,
+    genres: List<String>,
+    selectedGenres: Set<String>,
+    onGenreClick: (String) -> Unit,
+) {
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        item(key = "quick_free") {
+            SelectableChip(label = "Gratis", selected = quickFilters.freeOnly, onClick = onFreeOnlyClick, icon = R.drawable.ic_redeem)
+        }
+        item(key = "quick_ending") {
+            SelectableChip(
+                label = "Termina pronto",
+                selected = quickFilters.endingSoon,
+                onClick = onEndingSoonClick,
+                icon = R.drawable.ic_schedule,
+            )
+        }
         items(genres, key = { it }) { genre ->
             SelectableChip(label = genre, selected = genre in selectedGenres, onClick = { onGenreClick(genre) })
         }
@@ -997,8 +1043,8 @@ private fun PulsingFire() {
  * grilla de portadas un diálogo translúcido sería ilegible.
  */
 @Composable
-/** @param onBatterySettings abre el aviso de batería: es el único acceso para quien no inició sesión. */
-private fun CurrencyInfoDialog(onBatterySettings: () -> Unit, onDismiss: () -> Unit) {
+/** @param onAlertSettings abre "Tiendas y alertas": es el único acceso para quien no inició sesión. */
+private fun CurrencyInfoDialog(onAlertSettings: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(painterResource(R.drawable.ic_info), contentDescription = null) },
@@ -1023,7 +1069,7 @@ private fun CurrencyInfoDialog(onBatterySettings: () -> Unit, onDismiss: () -> U
             )
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Entendido") } },
-        dismissButton = { TextButton(onClick = onBatterySettings) { Text("Alertas a tiempo") } },
+        dismissButton = { TextButton(onClick = onAlertSettings) { Text("Tiendas y alertas") } },
         shape = RoundedCornerShape(24.dp),
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         iconContentColor = MaterialTheme.colorScheme.primary,
@@ -1052,7 +1098,16 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun NoMatchesContent(onClearFilters: () -> Unit) {
+/** Con solo un atajo activo se dice qué falta ("no hay juegos gratis"), no que la búsqueda falló. */
+private fun NoMatchesContent(query: DealsQuery, onClearFilters: () -> Unit) {
+    val onlyQuickFilter = query.genres.isEmpty() && DealsRepository.searchWords(query.search).isEmpty()
+    val stores = if (query.platforms.isEmpty()) "" else " en estas tiendas"
+    val message = when {
+        onlyQuickFilter && query.freeOnly && query.endingSoon -> "No hay juegos gratis que terminen pronto$stores"
+        onlyQuickFilter && query.freeOnly -> "No hay juegos gratis$stores por ahora"
+        onlyQuickFilter && query.endingSoon -> "Ninguna oferta$stores termina en las próximas 24 horas"
+        else -> "No se encontraron ofertas para esta búsqueda"
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.padding(24.dp),
@@ -1060,7 +1115,7 @@ private fun NoMatchesContent(onClearFilters: () -> Unit) {
         Text("🔍", style = MaterialTheme.typography.displaySmall)
         Spacer(Modifier.height(8.dp))
         Text(
-            "No se encontraron ofertas para esta búsqueda",
+            message,
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )

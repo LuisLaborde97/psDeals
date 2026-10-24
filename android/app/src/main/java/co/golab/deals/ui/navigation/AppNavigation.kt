@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -28,10 +29,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import co.golab.deals.PSDealsApp
 import co.golab.deals.R
 import co.golab.deals.ui.account.AccountViewModel
 import co.golab.deals.ui.deals.DealsScreen
 import co.golab.deals.ui.deals.rememberBackgroundBrush
+import co.golab.deals.ui.onboarding.OnboardingScreen
 import co.golab.deals.ui.update.UpdateDialog
 import co.golab.deals.ui.update.UpdateViewModel
 import co.golab.deals.ui.wishlist.WishlistScreen
@@ -71,10 +74,20 @@ fun AppNavigation(
     val account by accountViewModel.uiState.collectAsStateWithLifecycle()
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
 
-    // Aquí y no en una pantalla: el aviso de versión nueva debe salir sobre cualquier pestaña.
+    // Aquí y no en una pantalla: el aviso de versión nueva debe salir sobre cualquier pestaña (y sobre la bienvenida).
     val updateViewModel: UpdateViewModel = viewModel(factory = UpdateViewModel.Factory)
     val pendingUpdate by updateViewModel.pendingUpdate.collectAsStateWithLifecycle()
     pendingUpdate?.let { update -> UpdateDialog(update = update, onPostpone = { updateViewModel.postpone(update) }) }
+
+    // Bienvenida antes de la primera lista: de ella salen el filtro inicial y las tiendas de las alertas.
+    val preferences = (LocalContext.current.applicationContext as PSDealsApp).preferences
+    val storePreferences by preferences.state.collectAsStateWithLifecycle()
+    if (!storePreferences.onboardingDone) {
+        // La splash espera a que haya algo que mostrar: la bienvenida ya lo es.
+        LaunchedEffect(Unit) { onDealsReady() }
+        OnboardingScreen(onDone = preferences::completeOnboarding)
+        return
+    }
 
     // El degradado va aquí, detrás de las pantallas y de la barra inferior, para que sea continuo.
     Scaffold(

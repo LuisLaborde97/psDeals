@@ -6,12 +6,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import co.golab.deals.PSDealsApp
+import co.golab.deals.data.AppPreferences
 import co.golab.deals.data.DealsPage
 import co.golab.deals.data.DealsQuery
 import co.golab.deals.data.DealsRepository
+import co.golab.deals.data.StorePreferences
 import co.golab.deals.model.Deal
 import co.golab.deals.model.StorePlatform
 import com.google.firebase.firestore.DocumentSnapshot
@@ -86,8 +90,14 @@ private data class Paging(
     val error: String? = null,
 )
 
+/** Atajos de la fila de filtros, combinables entre sí y con tiendas, géneros y búsqueda. */
+data class QuickFilters(val freeOnly: Boolean = false, val endingSoon: Boolean = false)
+
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
-class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
+class DealsViewModel(
+    private val repository: DealsRepository,
+    private val preferences: AppPreferences,
+) : ViewModel() {
 
     /**
      * Texto del buscador como estado de Compose (no StateFlow): el TextField necesita actualizarse de
@@ -103,10 +113,16 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
 
     /**
      * Tiendas elegidas (selección múltiple); vacío = "Todas", así desmarcar la última vuelve solo a ver todo.
-     * Arranca en PlayStation, como antes de la selección múltiple.
+     * Arranca donde el usuario la dejó (o con las tiendas que eligió en la bienvenida).
      */
-    private val _selectedPlatforms = MutableStateFlow(setOf(StorePlatform.PLAYSTATION))
+    private val _selectedPlatforms = MutableStateFlow(preferences.state.value.selectedStores)
     val selectedPlatforms: StateFlow<Set<StorePlatform>> = _selectedPlatforms.asStateFlow()
+
+    private val _quickFilters = MutableStateFlow(QuickFilters())
+    val quickFilters: StateFlow<QuickFilters> = _quickFilters.asStateFlow()
+
+    /** Tiendas y umbral de alertas de este teléfono; las tiendas de alertas van primero en los chips. */
+    val storePreferences: StateFlow<StorePreferences> = preferences.state
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -135,13 +151,15 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
         val search = snapshotFlow { searchQuery.trim() }
             .distinctUntilChanged()
             .debounce { if (it.isEmpty()) 0L else SEARCH_DEBOUNCE_MS }
-        val query = combine(_selectedPlatforms, _selectedGenres, search, availableGenres) { platforms, selected, text, genres ->
+        val query = combine(_selectedPlatforms, _selectedGenres, search, availableGenres, _quickFilters) { platforms, selected, text, genres, quick ->
             // Solo cuentan los elegidos que existen en las tiendas actuales: uno que desapareció tras una
             // actualización (o al cambiar de tienda) se ignora en vez de dejar la lista vacía.
             DealsQuery(
                 platforms = platforms.mapTo(HashSet()) { it.id },
                 genres = selected.intersect(genres.toSet()),
                 search = text,
+                freeOnly = quick.freeOnly,
+                endingSoon = quick.endingSoon,
             )
         }.distinctUntilChanged()
         viewModelScope.launch {
@@ -265,19 +283,30 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
     /** Alterna el género: si estaba elegido lo quita, si no lo agrega (los demás se mantienen). */
     fun onGenreClick(genre: String) = _selectedGenres.update { if (genre in it) it - genre else it + genre }
 
-    /** Alterna la tienda (las demás se mantienen); desmarcar la última equivale a "Todas". */
-    fun onPlatformClick(platform: StorePlatform) =
+    /** Alterna la tienda (las demás se mantienen); desmarcar la última equivale a "Todas". Se recuerda al reabrir. */
+    fun onPlatformClick(platform: StorePlatform) {
         _selectedPlatforms.update { if (platform in it) it - platform else it + platform }
+        preferences.setSelectedStores(_selectedPlatforms.value)
+    }
 
     /** Chip "Todas": limpia la selección de tiendas. */
     fun onAllPlatformsClick() {
         _selectedPlatforms.value = emptySet()
+        preferences.setSelectedStores(emptySet())
     }
 
-    /** No cambia la tienda: limpia búsqueda y géneros dentro de la tienda actual. */
+    fun onFreeOnlyClick() = _quickFilters.update { it.copy(freeOnly = !it.freeOnly) }
+
+    fun onEndingSoonClick() = _quickFilters.update { it.copy(endingSoon = !it.endingSoon) }
+
+    /** Desde el diálogo "Tiendas y alertas": PSDealsApp resincroniza los temas de FCM al cambiar. */
+    fun saveAlerts(stores: Set<StorePlatform>, minDiscount: Int) = preferences.setAlerts(stores, minDiscount)
+
+    /** No cambia la tienda: limpia búsqueda, géneros y atajos dentro de la tienda actual. */
     fun clearFilters() {
         searchQuery = ""
         _selectedGenres.value = emptySet()
+        _quickFilters.value = QuickFilters()
     }
 
     /**
@@ -301,7 +330,7 @@ class DealsViewModel(private val repository: DealsRepository) : ViewModel() {
         private const val MAX_REQUESTS_PER_LOAD = 4
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
-            initializer { DealsViewModel(DealsRepository()) }
+            initializer { DealsViewModel(DealsRepository(), (this[APPLICATION_KEY] as PSDealsApp).preferences) }
         }
     }
 }

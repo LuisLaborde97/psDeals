@@ -30,13 +30,18 @@ import kotlin.math.max
  * todas las páginas; limit y startAfter solo la recorren.
  * @param platforms ids de [StorePlatform]; vacío = todas.
  * @param genres OR entre géneros; vacío = sin filtro.
+ * @param freeOnly solo juegos gratis (100 % de descuento).
+ * @param endingSoon solo ofertas que terminan en las próximas 24 h, la más próxima primero.
  */
 data class DealsQuery(
     val platforms: Set<String> = emptySet(),
     val genres: Set<String> = emptySet(),
     val search: String = "",
+    val freeOnly: Boolean = false,
+    val endingSoon: Boolean = false,
 ) {
-    val isFiltered: Boolean get() = genres.isNotEmpty() || DealsRepository.searchWords(search).isNotEmpty()
+    val isFiltered: Boolean
+        get() = genres.isNotEmpty() || freeOnly || endingSoon || DealsRepository.searchWords(search).isNotEmpty()
 }
 
 /**
@@ -157,6 +162,7 @@ class DealsRepository(
         var firestoreQuery: Query = db.collection(COLLECTION).whereEqualTo("active", true)
         if (query.platforms.isNotEmpty()) firestoreQuery = firestoreQuery.whereIn("platform", query.platforms.toList())
         val words = searchWords(query.search)
+        if (query.freeOnly || query.endingSoon) return specialPlan(firestoreQuery, query, words)
         val serverWord = words.maxByOrNull { it.length }?.take(MAX_TOKEN_LENGTH)
         val genresOnServer = serverWord == null && query.genres.isNotEmpty() &&
             query.genres.size * max(1, query.platforms.size) <= MAX_DISJUNCTIONS
@@ -171,10 +177,39 @@ class DealsRepository(
             query = firestoreQuery.orderBy("discountPercent", Query.Direction.DESCENDING),
             hasClientFilter = genresOnClient || wordsOnClient,
         ) { deal ->
-            (!genresOnClient || deal.genres.any { it in query.genres }) &&
-                (!wordsOnClient || searchWords(deal.title).let { title -> words.all { w -> title.any { it.startsWith(w) } } })
+            (!genresOnClient || deal.genres.any { it in query.genres }) && (!wordsOnClient || matchesWords(deal, words))
         }
     }
+
+    /**
+     * "Gratis" y "Termina pronto" dan conjuntos chicos (decenas de ofertas): el servidor aplica solo su condición y
+     * géneros y búsqueda se revisan en el teléfono. Así no hace falta un índice compuesto por cada combinación.
+     * "Termina pronto" necesita los índices (active, endDate) y (active, platform, endDate) de firestore.indexes.json.
+     */
+    private fun specialPlan(base: Query, query: DealsQuery, words: List<String>): QueryPlan {
+        val firestoreQuery = if (query.endingSoon) {
+            val now = System.currentTimeMillis()
+            base.whereGreaterThan("endDate", now)
+                .whereLessThanOrEqualTo("endDate", now + ENDING_SOON_MS)
+                .orderBy("endDate", Query.Direction.ASCENDING)
+        } else {
+            // Sin orderBy: Firestore no ordena por un campo filtrado con igualdad (todas son 100 %).
+            base.whereEqualTo("discountPercent", FREE_DISCOUNT)
+        }
+        val freeOnClient = query.freeOnly && query.endingSoon
+        return QueryPlan(
+            query = firestoreQuery,
+            hasClientFilter = freeOnClient || query.genres.isNotEmpty() || words.isNotEmpty(),
+        ) { deal ->
+            (!freeOnClient || deal.discountPercent >= FREE_DISCOUNT) &&
+                (query.genres.isEmpty() || deal.genres.any { it in query.genres }) &&
+                matchesWords(deal, words)
+        }
+    }
+
+    /** Cada palabra buscada es el comienzo de alguna palabra del título (misma regla que searchTokens en el backend). */
+    private fun matchesWords(deal: Deal, words: List<String>): Boolean =
+        words.isEmpty() || searchWords(deal.title).let { title -> words.all { w -> title.any { it.startsWith(w) } } }
 
     private class QueryPlan(val query: Query, val hasClientFilter: Boolean, val matches: (Deal) -> Boolean)
 
@@ -226,6 +261,9 @@ class DealsRepository(
         /** Igual que en el backend (searchTokens): prefijos de hasta 15 letras por palabra. */
         private const val MAX_TOKEN_LENGTH = 15
         private const val MAX_DISJUNCTIONS = 30
+        private const val FREE_DISCOUNT = 100
+        /** Ventana de "Termina pronto". */
+        val ENDING_SOON_MS = TimeUnit.HOURS.toMillis(24)
         private const val MAX_WHERE_IN = 30
         private val TICK_MS = TimeUnit.MINUTES.toMillis(1)
         // Respaldo si una tienda deja de ejecutarse: el cron es diario, 3 días toleran un par de fallos.

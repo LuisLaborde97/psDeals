@@ -25,11 +25,11 @@ class DealsMessagingService : FirebaseMessagingService() {
     /**
      * Modelo de envío por Firebase Installation ID (firebase-messaging 26+, opt-in con
      * `firebase_messaging_installation_id_enabled`). No está activado, así que no se llama; si algún día
-     * se activa, recibe un FID y no un token: por eso solo repara el topic y no toca fcmTokens.
+     * se activa, recibe un FID y no un token: por eso solo repara los temas y no toca fcmTokens.
      */
     override fun onRegistered(installationId: String) {
-        Log.d(TAG, "Registro FCM (FID) actualizado; re-suscribiendo al topic")
-        DealsNotifications.subscribeToTopic()
+        Log.d(TAG, "Registro FCM (FID) actualizado; re-suscribiendo a los temas")
+        (application as PSDealsApp).resyncTopics()
     }
 
     /**
@@ -39,8 +39,8 @@ class DealsMessagingService : FirebaseMessagingService() {
     @Deprecated("Ruta del modelo por token; ver onRegistered")
     override fun onNewToken(token: String) {
         // No se registra el token en el log: identifica al dispositivo.
-        Log.d(TAG, "Token FCM renovado; re-suscribiendo al topic y actualizando el perfil")
-        DealsNotifications.subscribeToTopic()
+        Log.d(TAG, "Token FCM renovado; re-suscribiendo a los temas y actualizando el perfil")
+        (application as PSDealsApp).resyncTopics()
         (application as PSDealsApp).onNewPushToken(token)
     }
 

@@ -11,8 +11,13 @@ import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import co.golab.deals.MainActivity
 import co.golab.deals.R
+import co.golab.deals.data.AppPreferences
+import co.golab.deals.data.StorePreferences
+import co.golab.deals.model.StorePlatform
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.Firebase
 import com.google.firebase.messaging.messaging
 
@@ -22,7 +27,10 @@ object DealsNotifications {
     /** Deben coincidir con el `channelId` que envía el backend (notify.ts y wishlistAlerts.ts). */
     const val CHANNEL_ID = "daily_deals"
     const val WISHLIST_CHANNEL_ID = "wishlist_alerts"
-    const val TOPIC = "daily_deals"
+    /** Canal general de las versiones anteriores: las nuevas se salen y usan los temas por tienda ([syncTopics]). */
+    private const val LEGACY_TOPIC = "daily_deals"
+    private const val TOPIC_PREFS = "fcm_topics"
+    private const val KEY_SYNCED = "synced"
 
     /**
      * Idempotente: crear un canal que ya existe no hace nada. NotificationManagerCompat ignora API < 26.
@@ -46,15 +54,27 @@ object DealsNotifications {
     }
 
     /**
-     * Se llama en cada arranque y en cada token nuevo: es idempotente y repara la
-     * suscripción si un intento anterior falló (sin red) o si FCM rotó el token.
+     * Deja este teléfono suscrito solo al tema de cada tienda elegida con su umbral (p. ej. `deals_xbox_50`) y fuera
+     * del resto y del canal general. Las 17 operaciones solo se repiten si la elección cambió, si FCM rotó el token
+     * ([force]) o si un intento anterior falló (sin red): la marca se guarda cuando todas terminan bien.
      */
-    fun subscribeToTopic() {
-        Firebase.messaging.subscribeToTopic(TOPIC).addOnCompleteListener { task ->
+    fun syncTopics(context: Context, preferences: StorePreferences, force: Boolean = false) {
+        val desired = preferences.alertStores.map { AppPreferences.topicFor(it, preferences.minDiscount) }.toSortedSet()
+        val signature = desired.joinToString(",")
+        val prefs = context.getSharedPreferences(TOPIC_PREFS, Context.MODE_PRIVATE)
+        if (!force && prefs.getString(KEY_SYNCED, null) == signature) return
+        val messaging = Firebase.messaging
+        val all = StorePlatform.entries.flatMap { p -> AppPreferences.DISCOUNT_OPTIONS.map { AppPreferences.topicFor(p, it) } }
+        val tasks = all.map { topic -> if (topic in desired) messaging.subscribeToTopic(topic) else messaging.unsubscribeFromTopic(topic) } +
+            messaging.unsubscribeFromTopic(LEGACY_TOPIC)
+        Tasks.whenAll(tasks).addOnCompleteListener { task ->
             if (task.isSuccessful) {
-                Log.d(TAG, "Suscrito al topic $TOPIC")
+                prefs.edit { putString(KEY_SYNCED, signature) }
+                Log.d(TAG, "Temas de ofertas sincronizados: ${signature.ifEmpty { "ninguno" }}")
             } else {
-                Log.w(TAG, "No se pudo suscribir al topic $TOPIC", task.exception)
+                // Se reintenta en el próximo arranque: sin marca guardada, la firma no coincide.
+                prefs.edit { remove(KEY_SYNCED) }
+                Log.w(TAG, "No se pudieron sincronizar los temas de ofertas", task.exception)
             }
         }
     }
