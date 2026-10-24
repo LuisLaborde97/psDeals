@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
 import { errMsg } from './scraper.js';
+import { STORE_PUSH_MIN_DISCOUNT } from './notify.js';
 import type { Deal, Platform } from './types.js';
 
 const COLLECTION = 'deals';
@@ -9,6 +10,7 @@ const MAX_BATCH_OPS = 450;
 const READ_CHUNK = 300;
 /** Prefijos por palabra para la búsqueda de la app; tope de largo (la app recorta igual su término). */
 const MAX_TOKEN_LENGTH = 15;
+/** Umbral del canal general de las versiones anteriores (notify.ts TOPIC). */
 export const PUSH_MIN_DISCOUNT = 50;
 
 /** backend/serviceAccountKey.json, válido tanto desde src/ (tsx) como desde dist/ (node). */
@@ -29,7 +31,7 @@ export interface PreviousDeal {
 }
 
 export interface SaveResult {
-  /** Ofertas nuevas con >= PUSH_MIN_DISCOUNT % (push al topic general). */
+  /** Ofertas nuevas con >= STORE_PUSH_MIN_DISCOUNT % (cada canal de push filtra después por su umbral). */
   newPushCandidates: Deal[];
   /** IDs cuyo lote se escribió: solo de esas se avisa, para no notificar algo que no quedó guardado. */
   savedIds: Set<string>;
@@ -96,7 +98,7 @@ export async function saveDeals(deals: Deal[], previous?: Map<string, PreviousDe
           updatedAt: now,
           lastSeenAt: now,
         });
-        if (deal.discountPercent >= PUSH_MIN_DISCOUNT) newInChunk.push(deal);
+        if (deal.discountPercent >= STORE_PUSH_MIN_DISCOUNT) newInChunk.push(deal);
       }
     }
 

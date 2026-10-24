@@ -1,5 +1,5 @@
 import { PUSH_MIN_DISCOUNT, deactivateMissing, loadPreviousDeals, markPlatformsRun, saveDeals, saveGenres } from './firestore.js';
-import { notifyDeals } from './notify.js';
+import { STORE_PUSH_MIN_DISCOUNT, notifyDeals, notifyStoreTopics, storeTopicMessages } from './notify.js';
 import { errMsg, scrapeDeals } from './scraper.js';
 import { scrapeEpicDeals } from './epic.js';
 import { scrapeSteamDeals } from './steam.js';
@@ -85,9 +85,13 @@ async function main(): Promise<number> {
     );
     // Solo lectura: detecta las alertas de wishlist y FCM valida los mensajes sin entregarlos.
     try {
-      const alerts = findWishlistAlerts(deals, await loadPreviousDeals(deals));
+      const previous = await loadPreviousDeals(deals);
+      const alerts = findWishlistAlerts(deals, previous);
       printAlerts(alerts);
       await sendWishlistAlerts(alerts, { dryRun: true });
+      const fresh = deals.filter((d) => !previous.has(d.id) && d.discountPercent >= STORE_PUSH_MIN_DISCOUNT);
+      printStorePushes(fresh);
+      await notifyStoreTopics(fresh, { dryRun: true });
     } catch (err) {
       console.warn(`[dry-run] no se pudieron revisar las alertas de wishlist (¿credenciales?): ${errMsg(err)}`);
     }
@@ -99,8 +103,12 @@ async function main(): Promise<number> {
   const alerts = findWishlistAlerts(deals, previous);
   printAlerts(alerts);
   const { newPushCandidates, savedIds } = await saveDeals(deals, previous);
-  console.log(`[main] ${newPushCandidates.length} ofertas nuevas con >= ${PUSH_MIN_DISCOUNT}%`);
-  const { failed } = await notifyDeals(newPushCandidates);
+  console.log(`[main] ${newPushCandidates.length} ofertas nuevas con >= ${STORE_PUSH_MIN_DISCOUNT}%`);
+  // Canal general para las versiones anteriores (mismo umbral de siempre) y canales por tienda para las nuevas.
+  const legacy = await notifyDeals(newPushCandidates.filter((d) => d.discountPercent >= PUSH_MIN_DISCOUNT));
+  printStorePushes(newPushCandidates);
+  const byStore = await notifyStoreTopics(newPushCandidates);
+  const failed = legacy.failed + byStore.failed;
   // Tokens fallidos (teléfonos desinstalados) son normales y se limpian: no marcan la ejecución como fallida.
   await sendWishlistAlerts(alerts.filter((a) => savedIds.has(a.deal.id)));
   // Solo tiendas completas cuyas ofertas se guardaron todas: con un lote fallido, sus ofertas no
@@ -125,6 +133,20 @@ async function main(): Promise<number> {
   }
   // Un motor roto marca la ejecución como fallida para que se note en GitHub Actions.
   return failed > 0 || brokenEngines > 0 ? 1 : 0;
+}
+
+/** Qué recibiría cada canal por tienda: tema (o condición) y título. */
+function printStorePushes(deals: Parameters<typeof storeTopicMessages>[0]): void {
+  const messages = storeTopicMessages(deals);
+  console.log(`[notify] ${messages.length} pushes por tienda planeados para ${deals.length} ofertas nuevas`);
+  if (messages.length > 0) {
+    console.table(
+      messages.slice(0, 30).map((m) => ({
+        destino: 'topic' in m ? m.topic : 'condition' in m ? m.condition : '',
+        título: m.notification?.title?.slice(0, 60),
+      })),
+    );
+  }
 }
 
 function printAlerts(alerts: ReturnType<typeof findWishlistAlerts>): void {
