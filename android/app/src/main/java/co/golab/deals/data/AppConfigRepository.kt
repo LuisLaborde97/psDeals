@@ -73,8 +73,9 @@ class AppConfigRepository(
 
         /**
          * Las compilaciones debug leen su propio documento: así se puede probar el aviso (incluso uno
-         * obligatorio) sin que les salga a los usuarios del alpha, que usan la release y leen `update`.
+         * obligatorio) sin que les salga a los usuarios, que usan la release. La release lee el de su canal
+         * de distribución: `update` (GitHub) o `update_play` (Google Play; ver productFlavors).
          */
-        val UPDATE_DOC = if (BuildConfig.DEBUG) "update_debug" else "update"
+        val UPDATE_DOC = if (BuildConfig.DEBUG) "update_debug" else BuildConfig.UPDATE_DOC
     }
 }

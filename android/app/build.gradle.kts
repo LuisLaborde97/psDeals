@@ -35,6 +35,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Dos canales de distribución con el mismo applicationId: solo cambia cómo se actualiza la app.
+    flavorDimensions += "distribution"
+    productFlavors {
+        // APK de GitHub Releases: el aviso de config/update descarga la APK nueva (UpdateDownloader).
+        create("github") {
+            dimension = "distribution"
+            buildConfigField("String", "UPDATE_DOC", "\"update\"")
+        }
+        // Google Play: las actualizaciones las hace Play, cuya política prohíbe que la app descargue APKs; esta variante
+        // no incluye ese código y su aviso (config/update_play) abre la ficha de Play Store.
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("String", "UPDATE_DOC", "\"update_play\"")
+        }
+    }
+
     signingConfigs {
         create("release") {
             if (releaseKeystore != null) {
