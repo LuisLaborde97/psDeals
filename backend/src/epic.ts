@@ -32,6 +32,8 @@ interface ItadPrice {
 
 interface ItadDeal {
   title: string;
+  /** ITAD marca así los juegos para adultos (por eso se piden con mature=true). */
+  mature?: boolean;
   type: 'game' | 'dlc' | 'package' | null;
   assets?: { boxart?: string; banner600?: string; banner400?: string };
   /** expiry: fin de la rebaja (ISO 8601) o null si ITAD no lo conoce. */
@@ -127,6 +129,7 @@ async function fetchItadDeals(region: string, cc: string): Promise<ScrapeResult>
         region,
         genres: [], // /deals/v2 no trae etiquetas
         endDate: parseDate(expiry),
+        explicit: d.mature === true,
       };
     });
   console.log(`[epic] IsThereAnyDeal: ${deals.length} juegos con descuento de ${list.length} ofertas`);
@@ -171,6 +174,7 @@ async function fetchFreeGamesCollection(region: string, cc: string, locale: stri
       region,
       genres: [], // solo trae IDs de etiquetas, sin nombres
       endDate: parseDate(active.endDate),
+      explicit: false, // la colección oficial son los juegos gratis destacados por Epic
     });
   }
   console.log(`[epic] colección oficial: ${deals.length} con descuento de ${elements.length} elementos`);

@@ -1,6 +1,7 @@
 package co.golab.deals.data
 
 import android.util.Log
+import co.golab.deals.BuildConfig
 import co.golab.deals.model.Country
 import co.golab.deals.model.Deal
 import co.golab.deals.model.StorePlatform
@@ -74,7 +75,7 @@ class DealsRepository(
         val firestoreQuery = plan.query.limit(pageSize).let { if (after != null) it.startAfter(after) else it }
         val snapshot = firestoreQuery.get(Source.DEFAULT).await()
         return DealsPage(
-            deals = snapshot.documents.mapNotNull { it.toDealOrNull(query.country) }.filter(plan.matches),
+            deals = snapshot.documents.mapNotNull { it.toDealOrNull(query.country) }.filter(plan.matches).filter(::isAllowed),
             cursor = snapshot.documents.lastOrNull() ?: after,
             isLastPage = snapshot.size() < pageSize,
             isFromCache = snapshot.metadata.isFromCache,
@@ -136,7 +137,7 @@ class DealsRepository(
                                 close(error)
                                 return@addSnapshotListener
                             }
-                            if (snapshot != null) trySend(snapshot.documents.mapNotNull { it.toDealOrNull(country) })
+                            if (snapshot != null) trySend(snapshot.documents.mapNotNull { it.toDealOrNull(country) }.filter(::isAllowed))
                         }
                     awaitClose { registration.remove() }
                 }
@@ -217,6 +218,13 @@ class DealsRepository(
         }
     }
 
+    /**
+     * La variante de Google Play no muestra contenido explícito (su política no lo permite). Se filtra en el teléfono
+     * y no en la consulta: son muy pocas ofertas y así no hace falta duplicar cada índice compuesto. Por eso el
+     * contador del servidor puede incluir alguna de más en esa variante.
+     */
+    private fun isAllowed(deal: Deal): Boolean = !(BuildConfig.HIDE_EXPLICIT && deal.explicit)
+
     /** Cada palabra buscada es el comienzo de alguna palabra del título (misma regla que searchTokens en el backend). */
     private fun matchesWords(deal: Deal, words: List<String>): Boolean =
         words.isEmpty() || searchWords(deal.title).let { title -> words.all { w -> title.any { it.startsWith(w) } } }
@@ -259,6 +267,7 @@ class DealsRepository(
             endDate = (get("endDate") as? Number)?.toLong(),
             active = getBoolean("active"),
             country = country,
+            explicit = getBoolean("explicit") == true,
         )
     }
 

@@ -106,6 +106,7 @@ function toDeal(p: ProductSummary, region: string, locale: string): Deal | null 
     region,
     genres: p.categories ?? [],
     endDate: parseXboxDate(price.endDateUtc),
+    explicit: false, // Microsoft Store no vende juegos solo para adultos
   };
 }
 

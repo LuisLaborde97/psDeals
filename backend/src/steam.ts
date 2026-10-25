@@ -11,6 +11,11 @@ const ASSETS_URL = 'https://shared.akamai.steamstatic.com/store_item_assets/';
 const MAX_RESULTS = Number(process.env.STEAM_MAX_RESULTS ?? 1000);
 /** Máximo que acepta el buscador por página. */
 const SEARCH_PAGE_SIZE = 100;
+/**
+ * Descriptores de contenido de Steam que cuentan como explícitos: 3 = contenido sexual solo para adultos, 4 = desnudos
+ * o contenido sexual frecuente. Los demás (1 desnudos ocasionales, 2 violencia, 5 contenido maduro) no.
+ */
+const EXPLICIT_DESCRIPTORS = new Set([3, 4]);
 /** `category1=998`: solo juegos (sin DLC, bandas sonoras ni software). */
 const GAMES_CATEGORY = 998;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -34,6 +39,8 @@ interface StoreItem {
   name?: string;
   store_url_path?: string;
   tags?: { tagid: number; weight: number }[];
+  /** Descriptores de contenido de Steam; llegan sin pedirlos en data_request. */
+  content_descriptorids?: number[];
   assets?: Partial<Record<(typeof IMAGE_ASSETS)[number] | 'asset_url_format', string>>;
   best_purchase_option?: {
     final_price_in_cents?: string;
@@ -156,6 +163,7 @@ function toDeal(item: StoreItem, region: string, tagNames: Map<number, string>):
       .slice(0, MAX_GENRES)
       .map((t) => tagNames.get(t.tagid)!),
     endDate: toEndDate(price.active_discounts?.map((d) => d.discount_end_date)),
+    explicit: (item.content_descriptorids ?? []).some((id) => EXPLICIT_DESCRIPTORS.has(id)),
   };
 }
 

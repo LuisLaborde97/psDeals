@@ -48,8 +48,9 @@ async function main(): Promise<number> {
     } else {
       const { deals: found, complete } = result.value;
       const withEnd = found.filter((d) => d.endDate !== null).length;
+      const explicit = found.filter((d) => d.explicit).length;
       console.log(
-        `[main] ${platform}: ${found.length} ofertas con descuento (${withEnd} con fecha de fin)` +
+        `[main] ${platform}: ${found.length} ofertas con descuento (${withEnd} con fecha de fin, ${explicit} explícitas)` +
           (complete ? '' : ' — listado INCOMPLETO: no se marcará como ejecución completa'),
       );
       deals.push(...found);

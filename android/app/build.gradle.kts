@@ -42,12 +42,15 @@ android {
         create("github") {
             dimension = "distribution"
             buildConfigField("String", "UPDATE_DOC", "\"update\"")
+            buildConfigField("boolean", "HIDE_EXPLICIT", "false")
         }
         // Google Play: las actualizaciones las hace Play, cuya política prohíbe que la app descargue APKs; esta variante
         // no incluye ese código y su aviso (config/update_play) abre la ficha de Play Store.
         create("play") {
             dimension = "distribution"
             buildConfigField("String", "UPDATE_DOC", "\"update_play\"")
+            // La política de Play no permite contenido sexual explícito: se ocultan las ofertas que el backend marca.
+            buildConfigField("boolean", "HIDE_EXPLICIT", "true")
         }
     }
 

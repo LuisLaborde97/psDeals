@@ -25,6 +25,11 @@ export interface Deal {
   endDate: number | null;
   /** Géneros localizados por la tienda (ej. "Acción", "Terror"). Vacío si no se pudieron obtener. */
   genres: string[];
+  /**
+   * Contenido sexual explícito (Steam: descriptores 3 y 4; Epic vía ITAD: `mature`). No se descarta: la variante de
+   * la app para Google Play lo oculta (su política no lo permite) y la de GitHub lo muestra. Nunca va en pushes.
+   */
+  explicit: boolean;
 }
 
 /** Lo que devuelve cada motor de tienda. */

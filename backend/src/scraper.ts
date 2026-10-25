@@ -272,6 +272,7 @@ function toDeal(p: StoreProduct, region: string): Deal | null {
     region,
     genres: [], // se completan en la fase de géneros de scrapeDeals
     endDate: null, // la grilla de la PS Store no publica cuándo termina la rebaja
+    explicit: false, // la PS Store no vende juegos solo para adultos
   };
 }
 

@@ -82,6 +82,7 @@ export async function saveDeals(deals: Deal[], country: string, previous?: Map<s
           platform: deal.platform,
           storeUrl: deal.storeUrl,
           endDate: deal.endDate,
+          explicit: deal.explicit,
           active: true,
           searchTokens: searchTokens(deal.title),
           // Si la fase de géneros falló en esta ejecución, no se borran los que ya estaban guardados.

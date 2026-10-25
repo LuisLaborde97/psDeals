@@ -44,7 +44,8 @@ export async function notifyDeals(deals: Deal[]): Promise<{ sent: number; failed
   initFirebase();
   const messaging = getMessaging();
 
-  const sorted = [...deals].sort((a, b) => b.discountPercent - a.discountPercent);
+  // Nunca contenido explícito en pushes: llegan a todos (también a la versión de Play) con su imagen.
+  const sorted = deals.filter((d) => !d.explicit).sort((a, b) => b.discountPercent - a.discountPercent);
   const individual = sorted.slice(0, MAX_PUSHES);
   const remaining = sorted.slice(MAX_PUSHES);
 
@@ -83,7 +84,7 @@ export function storeTopicMessages(deals: Deal[], country: string): Message[] {
   const platforms = [...new Set(deals.map((d) => d.platform))];
   for (const platform of platforms) {
     const sorted = deals
-      .filter((d) => d.platform === platform && d.discountPercent >= STORE_PUSH_MIN_DISCOUNT)
+      .filter((d) => d.platform === platform && !d.explicit && d.discountPercent >= STORE_PUSH_MIN_DISCOUNT)
       .sort((a, b) => b.discountPercent - a.discountPercent);
     for (const deal of sorted.slice(0, MAX_PUSHES_PER_STORE)) {
       // Condición y no un tema: la oferta llega una sola vez a cada teléfono aunque esté en varios umbrales.

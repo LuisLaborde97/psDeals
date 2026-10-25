@@ -24,6 +24,8 @@ data class Deal(
     val active: Boolean? = null,
     /** País de la colección de la que salió (los IDs se repiten entre países). */
     val country: Country = Country.DEFAULT,
+    /** Contenido sexual explícito según la tienda: la variante de Google Play no lo muestra (BuildConfig.HIDE_EXPLICIT). */
+    val explicit: Boolean = false,
 ) {
     /** Clave en la wishlist del usuario: el ID solo en Colombia, `mx:steam-123` en los demás países. */
     val wishlistKey: String get() = country.wishlistKey(id)

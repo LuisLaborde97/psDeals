@@ -124,10 +124,11 @@ Notas:
 - Contenido mostrado: portadas e imágenes promocionales de videojuegos publicadas por las tiendas oficiales. Algunos
   juegos están clasificados para mayores (violencia).
 
-> **Decisión pendiente antes de enviar a revisión:** el backend incluye juegos para adultos (Epic con
-> `mature: 'true'`; Steam y PlayStation también los traen). Google Play no permite contenido sexual explícito, y las
-> portadas de algunos de esos juegos podrían provocar un rechazo. Recomendado: filtrar en el backend los juegos con
-> contenido sexual explícito (Steam, por ejemplo, los marca con sus descriptores de contenido) antes de la revisión.
+> **Contenido explícito:** el backend marca con `explicit: true` los juegos con contenido sexual explícito (Steam:
+> descriptores 3 y 4; Epic vía IsThereAnyDeal: `mature`) y la variante `play` no los muestra ni en la lista ni en la
+> lista de deseos; tampoco se envían en notificaciones. La variante `github` los sigue mostrando. Antes de enviar a
+> revisión, asegurarse de que el scraper haya corrido al menos una vez con este cambio (los documentos anteriores no
+> tienen el campo).
 
 ### Público objetivo
 
