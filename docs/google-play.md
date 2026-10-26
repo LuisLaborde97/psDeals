@@ -159,8 +159,15 @@ Avisar a los testers que tengan la versión de GitHub: **deben desinstalarla pri
 su propia clave y Android no instala encima de una firma distinta). Con la sesión de Google recuperan su lista de
 deseos.
 
-**Después de la primera subida:** copiar la huella SHA-1 de *Play App Signing* (Play Console → Configuración → Integridad
-de la app) en Firebase (app `co.golab.deals`), o el inicio de sesión con Google fallará para quien instale desde Play.
+**Huellas de la clave de firma de Google Play** (Play Console → Protegida con Play → Protección de Play Store →
+Gestiona la firma de aplicaciones de Play). El SHA-1 debe estar en Firebase (app `co.golab.deals`) o el inicio de sesión
+con Google falla para quien instale desde Play; el SHA-256 sirve para App Links (`assetlinks.json`) si algún día se usan.
+
+| Clave | Huella |
+|---|---|
+| Firma de Play · SHA-1 | `FA:39:51:B5:29:C9:5B:6B:DD:4B:77:FD:92:4A:A7:83:8C:FE:67:B4` |
+| Firma de Play · SHA-256 | `F5:C4:0C:89:B3:41:EB:00:CD:0B:FA:56:27:F2:8B:33:14:0C:25:97:A0:06:AF:AB:88:62:38:3A:E6:2E:8B:E2` |
+| Subida (`release-key.jks`) · SHA-1 | `17:79:EC:EC:C8:AD:FF:99:41:CE:76:1E:11:B3:8C:5B:BC:30:E0:4C` |
 
 ## 5. Avisos de actualización en Play
 
