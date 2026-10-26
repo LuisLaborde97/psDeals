@@ -89,7 +89,7 @@ También podríamos divulgar datos si la ley o una autoridad competente lo exige
 Puedes conocer, actualizar, rectificar y suprimir tus datos, así como revocar tu autorización, de acuerdo con la Ley 1581 de 2012 de Colombia y con la normativa de protección de datos aplicable en tu país.
 
 - **Desde la app**: puedes quitar juegos de tu lista de deseos, borrar búsquedas de tu historial y cerrar sesión.
-- **Eliminar tu cuenta desde la app**: toca tu foto de perfil y elige **Eliminar cuenta**. Tras confirmar con tu cuenta de Google, se borran de inmediato tu perfil (lista de deseos, historial de búsqueda y tokens de notificación) y tu cuenta de Firebase Authentication (nombre, correo y foto).
+- **Eliminar tu cuenta desde la app**: toca tu foto de perfil y, al final del panel de tu cuenta, elige **Eliminar mi cuenta**. Tras confirmar con tu cuenta de Google, se borran de inmediato tu perfil (lista de deseos, historial de búsqueda y tokens de notificación) y tu cuenta de Firebase Authentication (nombre, correo y foto).
 - **Eliminar tu cuenta sin la app**: si ya no tienes la app instalada o usas una cuenta anónima, escríbenos a **[Kmilolaborde18@gmail.com](mailto:Kmilolaborde18@gmail.com)** desde el correo de tu cuenta de Google (o indicando que usabas una cuenta anónima, con el modelo de tu teléfono). Eliminaremos tu cuenta y tu perfil en un plazo máximo de 15 días hábiles.
 - Las estadísticas de Google Analytics no están vinculadas a tu cuenta y se eliminan automáticamente al vencer su período de retención (sección 5).
 - **Notificaciones**: puedes desactivarlas en cualquier momento desde los ajustes de Android.
