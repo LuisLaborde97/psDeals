@@ -23,12 +23,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import co.golab.deals.R
 import co.golab.deals.model.Country
 import co.golab.deals.model.StorePlatform
+import co.golab.deals.ui.PRIVACY_POLICY_URL
+import co.golab.deals.ui.openStoreUrl
 import kotlinx.coroutines.launch
 
 private val SheetShape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)
@@ -74,7 +78,8 @@ private fun storeCurrencies(country: Country): List<StoreCurrency> {
 }
 
 /**
- * Información de precios (ícono ⓘ): moneda de cada tienda, sin comisiones y aviso de no afiliación. Panel
+ * Información de precios (ícono ⓘ): moneda de cada tienda, sin comisiones, aviso de no afiliación y enlace a la
+ * política de privacidad. Panel
  * deslizable con el mismo lenguaje visual que la cuenta y el detalle de ofertas.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,6 +88,7 @@ fun PriceInfoSheet(country: Country, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     val appName = stringResource(R.string.app_name)
+    val context = LocalContext.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -159,7 +165,10 @@ fun PriceInfoSheet(country: Country, onDismiss: () -> Unit) {
                     "portadas pertenecen a sus dueños.",
             )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { context.openStoreUrl(PRIVACY_POLICY_URL) }) { Text("Política de privacidad") }
+
+            Spacer(Modifier.height(16.dp))
             Button(
                 onClick = { scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() } },
                 shape = RoundedCornerShape(16.dp),

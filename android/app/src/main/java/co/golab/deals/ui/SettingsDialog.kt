@@ -31,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -57,6 +58,7 @@ fun SettingsDialog(
     var storeIds by rememberSaveable { mutableStateOf(preferences.alertStores.map { it.id }) }
     var minDiscount by rememberSaveable { mutableIntStateOf(preferences.minDiscount) }
     var countryCode by rememberSaveable { mutableStateOf(preferences.country.code) }
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(painterResource(R.drawable.ic_settings), contentDescription = null) },
@@ -109,6 +111,9 @@ fun SettingsDialog(
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = onBatterySettings, contentPadding = PaddingValues(horizontal = 0.dp)) {
                     Text("Revisar el ahorro de batería")
+                }
+                TextButton(onClick = { context.openStoreUrl(PRIVACY_POLICY_URL) }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                    Text("Política de privacidad")
                 }
             }
         },

@@ -29,8 +29,8 @@ android {
         targetSdk = 37
         // Subirlo en cada APK que se reparta: Android solo instala encima uno con versionCode mayor, y el
         // aviso de actualización (config/update.latestVersionCode) se compara contra este número.
-        versionCode = 7
-        versionName = "1.0.0-beta07"
+        versionCode = 8
+        versionName = "1.0.0-beta08"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -77,6 +77,11 @@ android {
                 }
                 logger.warn("Release firmado con la clave debug: no sirve para Google Play (falta android/key.properties)")
                 signingConfigs.getByName("debug")
+            }
+            // Tabla de símbolos de las librerías nativas de las dependencias dentro del .aab: Play la usa para leer los
+            // fallos nativos (sin ella avisa al subir).
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
             }
             optimization {
                 enable = true
